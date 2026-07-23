@@ -85,7 +85,7 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
 
   const current = visibleFunctions[index];
 
-  function move(direction) {
+  function move(direction, scrollToTop = false) {
     if (visibleFunctions.length < 2) return;
 
     setIndex((currentIndex) => {
@@ -93,6 +93,10 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
       return (next + visibleFunctions.length) % visibleFunctions.length;
     });
     setExpanded(false);
+
+    if (scrollToTop) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   function showCatalog() {
@@ -132,10 +136,6 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
     }
   }
 
-  const mobileTags = current
-    ? [...new Set(["内置函数", current.library, "代码学习"])]
-    : [];
-
   return (
     <section className="study-layout">
       <div className={`mobile-study-view ${expanded ? "details-open" : ""}`}>
@@ -157,15 +157,7 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
             </header>
 
             <article className="mobile-function-hero">
-              <div className="mobile-function-mark">{current.name}</div>
               <h1>{current.name}</h1>
-              <p>{current.description}</p>
-
-              <div className="mobile-tag-row">
-                {mobileTags.map((tag) => (
-                  <span key={tag}>{tag}</span>
-                ))}
-              </div>
 
               <button
                 className="mobile-expand-button"
@@ -178,6 +170,20 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
                 <ChevronIcon up={expanded} />
               </button>
             </article>
+
+            <div className="mobile-function-actions">
+              <span>
+                {index + 1} / {visibleFunctions.length}
+              </span>
+              <button
+                type="button"
+                disabled={visibleFunctions.length < 2}
+                onClick={() => move(1, true)}
+              >
+                下一个函数
+                <span aria-hidden="true">→</span>
+              </button>
+            </div>
 
             {!expanded ? (
               <div className="mobile-reveal-hint">
