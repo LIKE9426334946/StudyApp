@@ -44,7 +44,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell mode-${mode}`}>
       <header className="site-header">
         <button className="brand" type="button" onClick={() => setMode("study")}>
           <span className="brand-mark">S</span>
@@ -106,4 +106,3 @@ function App() {
 }
 
 export default App;
-
