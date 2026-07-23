@@ -6,6 +6,7 @@ const path = require("node:path");
 const DEFAULT_DATA_FILE = path.join(__dirname, "../data/functions.json");
 const DEFAULT_LIBRARIES_FILE = path.join(__dirname, "../data/libraries.json");
 const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
+const MAX_JSON_FILE_SIZE = 50 * 1024 * 1024;
 
 function normalizeText(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -36,12 +37,6 @@ function validateFunction(item) {
 function normalizeImportedFunctions(input) {
   if (!Array.isArray(input)) {
     const error = new Error("导入文件的顶层数据必须是数组");
-    error.status = 400;
-    throw error;
-  }
-
-  if (input.length > 5000) {
-    const error = new Error("一次最多导入 5000 个函数");
     error.status = 400;
     throw error;
   }
@@ -175,7 +170,7 @@ function createApp(options = {}) {
   const app = express();
 
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({ limit: MAX_JSON_FILE_SIZE }));
 
   app.get("/api/health", (req, res) => {
     res.json({
@@ -197,9 +192,17 @@ function createApp(options = {}) {
   app.get("/api/functions/export", async (req, res, next) => {
     try {
       const functions = await readFunctions(dataFile);
+      const content = `${JSON.stringify(functions, null, 2)}\n`;
+
+      if (Buffer.byteLength(content, "utf8") > MAX_JSON_FILE_SIZE) {
+        return res.status(413).json({
+          message: "functions.json 超过 50MB，无法导出",
+        });
+      }
+
       res.attachment("functions.json");
       res.type("application/json");
-      return res.send(`${JSON.stringify(functions, null, 2)}\n`);
+      return res.send(content);
     } catch (error) {
       return next(error);
     }
@@ -220,12 +223,6 @@ function createApp(options = {}) {
 
       if (mode === "append") {
         const existingFunctions = await readFunctions(dataFile);
-
-        if (existingFunctions.length + importedFunctions.length > 5000) {
-          return res.status(400).json({
-            message: "新增导入后最多只能保存 5000 个函数",
-          });
-        }
 
         let nextId =
           existingFunctions.reduce(
@@ -441,6 +438,10 @@ function createApp(options = {}) {
   });
 
   app.use((error, req, res, next) => {
+    if (error.status === 413 || error.type === "entity.too.large") {
+      return res.status(413).json({ message: "JSON 文件不能超过 50MB" });
+    }
+
     if (error instanceof SyntaxError && "body" in error) {
       return res.status(400).json({ message: "请求中的 JSON 格式不正确" });
     }

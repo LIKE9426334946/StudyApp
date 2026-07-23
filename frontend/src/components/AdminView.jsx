@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createFunction,
   createLibrary,
@@ -19,6 +19,8 @@ const EMPTY_FORM = {
   result: "",
 };
 
+const MAX_JSON_FILE_SIZE = 50 * 1024 * 1024;
+
 function AdminView({ functions, onRefresh }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -34,7 +36,36 @@ function AdminView({ functions, onRefresh }) {
   const [librarySaving, setLibrarySaving] = useState(false);
   const [libraryMessage, setLibraryMessage] = useState("");
   const [libraryError, setLibraryError] = useState("");
+  const [functionQuery, setFunctionQuery] = useState("");
   const importInputRef = useRef(null);
+
+  const groupedFunctions = useMemo(() => {
+    const normalizedQuery = functionQuery.trim().toLocaleLowerCase();
+    const groups = new Map(libraries.map((name) => [name, []]));
+
+    functions
+      .filter(
+        (item) =>
+          !normalizedQuery ||
+          String(item.name).toLocaleLowerCase().includes(normalizedQuery),
+      )
+      .forEach((item) => {
+        if (!groups.has(item.library)) {
+          groups.set(item.library, []);
+        }
+
+        groups.get(item.library).push(item);
+      });
+
+    return Array.from(groups, ([name, items]) => ({ name, items })).filter(
+      (group) => group.items.length > 0,
+    );
+  }, [functionQuery, functions, libraries]);
+
+  const visibleFunctionCount = groupedFunctions.reduce(
+    (count, group) => count + group.items.length,
+    0,
+  );
 
   const loadLibraries = useCallback(async () => {
     setLibraryError("");
@@ -169,8 +200,8 @@ function AdminView({ functions, onRefresh }) {
       return;
     }
 
-    if (file.size > 1024 * 1024) {
-      setTransferError("JSON 文件不能超过 1MB。");
+    if (file.size > MAX_JSON_FILE_SIZE) {
+      setTransferError("JSON 文件不能超过 50MB。");
       return;
     }
 
@@ -339,7 +370,7 @@ function AdminView({ functions, onRefresh }) {
         <div>
           <span>JSON BACKUP</span>
           <h2>数据导入与导出</h2>
-          <p>导出用于备份；导入前可以选择新增数据或覆盖全部数据。</p>
+          <p>导出用于备份；导入前可以选择新增或覆盖，文件最大 50MB。</p>
         </div>
 
         <div className="data-transfer-controls">
@@ -502,39 +533,71 @@ function AdminView({ functions, onRefresh }) {
               <span>FUNCTION LIST</span>
               <h2>已有函数</h2>
             </div>
-            <button className="text-button" type="button" onClick={onRefresh}>
-              ↻ 刷新
-            </button>
+            <div className="function-list-tools">
+              <label className="function-list-search">
+                <span aria-hidden="true">⌕</span>
+                <input
+                  type="search"
+                  value={functionQuery}
+                  onChange={(event) => setFunctionQuery(event.target.value)}
+                  placeholder="搜索函数名称"
+                  aria-label="搜索函数名称"
+                />
+              </label>
+              <button className="text-button" type="button" onClick={onRefresh}>
+                ↻ 刷新
+              </button>
+            </div>
           </div>
 
           <div className="admin-function-list">
             {functions.length === 0 ? (
               <div className="empty-list">还没有函数，请先添加一个。</div>
+            ) : groupedFunctions.length === 0 ? (
+              <div className="empty-list">
+                没有找到名称包含“{functionQuery.trim()}”的函数。
+              </div>
             ) : (
-              functions.map((item) => (
-                <article className="admin-function-item" key={item.id}>
-                  <div className="item-index">
-                    {String(item.id).padStart(2, "0")}
-                  </div>
-                  <div className="item-content">
-                    <span>{item.library}</span>
-                    <h3>{item.name}</h3>
-                    <p>{item.description}</p>
-                  </div>
-                  <div className="item-actions">
-                    <button type="button" onClick={() => beginEdit(item)}>
-                      修改
-                    </button>
-                    <button
-                      className="danger-button"
-                      type="button"
-                      onClick={() => handleDelete(item)}
-                    >
-                      删除
-                    </button>
-                  </div>
-                </article>
-              ))
+              <>
+                <p className="function-list-summary">
+                  {functionQuery.trim()
+                    ? `找到 ${visibleFunctionCount} 个函数`
+                    : `共 ${visibleFunctionCount} 个函数，按函数库显示`}
+                </p>
+                {groupedFunctions.map((group) => (
+                  <section className="function-library-group" key={group.name}>
+                    <div className="function-library-heading">
+                      <h3>{group.name}</h3>
+                      <span>{group.items.length} 个函数</span>
+                    </div>
+                    <div className="function-library-items">
+                      {group.items.map((item) => (
+                        <article className="admin-function-item" key={item.id}>
+                          <div className="item-index">
+                            {String(item.id).padStart(2, "0")}
+                          </div>
+                          <div className="item-content">
+                            <h3>{item.name}</h3>
+                            <p>{item.description}</p>
+                          </div>
+                          <div className="item-actions">
+                            <button type="button" onClick={() => beginEdit(item)}>
+                              修改
+                            </button>
+                            <button
+                              className="danger-button"
+                              type="button"
+                              onClick={() => handleDelete(item)}
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </>
             )}
           </div>
         </section>

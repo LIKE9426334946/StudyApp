@@ -941,10 +941,99 @@ textarea:focus-visible {
   border-bottom: 1px solid var(--line);
 }
 
+.function-list-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.function-list-search {
+  display: flex;
+  width: min(230px, 32vw);
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fffefa;
+}
+
+.function-list-search:focus-within {
+  border-color: #7e9c90;
+  box-shadow: 0 0 0 3px rgba(49, 91, 76, 0.1);
+}
+
+.function-list-search > span {
+  color: var(--green);
+  font-family: inherit;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.function-list-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+}
+
+.function-list-search input::placeholder {
+  color: #97978f;
+}
+
 .admin-function-list {
   max-height: 840px;
   overflow-y: auto;
   padding: 5px 22px 22px;
+}
+
+.function-list-summary {
+  margin: 0;
+  padding: 14px 6px 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.function-library-group {
+  padding-top: 8px;
+}
+
+.function-library-group + .function-library-group {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.function-library-heading {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 6px 10px;
+  background: rgba(255, 253, 248, 0.97);
+}
+
+.function-library-heading h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--green-dark);
+  font-size: 15px;
+}
+
+.function-library-heading > span {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--green);
+  background: var(--green-soft);
+  font-size: 10px;
 }
 
 .admin-function-item {
@@ -972,16 +1061,8 @@ textarea:focus-visible {
   min-width: 0;
 }
 
-.item-content > span {
-  color: var(--orange);
-  font-family: "DM Mono", monospace;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .item-content h3 {
-  margin: 4px 0 6px;
+  margin: 0 0 6px;
   overflow-wrap: anywhere;
   font-family: "DM Mono", monospace;
   font-size: 16px;
@@ -1249,7 +1330,21 @@ textarea:focus-visible {
   }
 
   .list-heading {
+    align-items: stretch;
+    flex-direction: column;
     padding: 22px 18px 17px;
+  }
+
+  .function-list-tools {
+    align-items: stretch;
+  }
+
+  .function-list-search {
+    width: 100%;
+  }
+
+  .function-list-tools .text-button {
+    flex: 0 0 auto;
   }
 
   .admin-function-list {

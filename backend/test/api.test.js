@@ -260,4 +260,29 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
     { method: "DELETE" },
   );
   assert.equal(deleteUnusedLibraryResponse.status, 204);
+
+  const largeCode = "x".repeat(1024 * 1024 + 1024);
+  const largeImportResponse = await fetch(
+    `${baseUrl}/api/functions/import?mode=replace`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([
+        {
+          id: 1,
+          library: "Python",
+          name: "large_example()",
+          description: "验证超过旧版 1MB 限制的数据仍可导入",
+          code: largeCode,
+          result: "ok",
+        },
+      ]),
+    },
+  );
+  assert.equal(largeImportResponse.status, 200);
+  await largeImportResponse.arrayBuffer();
+
+  const largeExportResponse = await fetch(`${baseUrl}/api/functions/export`);
+  assert.equal(largeExportResponse.status, 200);
+  assert.ok((await largeExportResponse.arrayBuffer()).byteLength > 1024 * 1024);
 });
