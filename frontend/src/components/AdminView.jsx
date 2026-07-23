@@ -26,6 +26,7 @@ function AdminView({ functions, onRefresh }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [transferring, setTransferring] = useState(false);
+  const [importMode, setImportMode] = useState("append");
   const [transferMessage, setTransferMessage] = useState("");
   const [transferError, setTransferError] = useState("");
   const [libraries, setLibraries] = useState([]);
@@ -43,9 +44,10 @@ function AdminView({ functions, onRefresh }) {
       setLibraries(data);
       setForm((current) => ({
         ...current,
-        library: data.includes(current.library)
-          ? current.library
-          : data[0] || "",
+        library:
+          current.library && data.includes(current.library)
+            ? current.library
+            : "",
       }));
     } catch (requestError) {
       setLibraryError(requestError.message);
@@ -62,7 +64,10 @@ function AdminView({ functions, onRefresh }) {
   }
 
   function resetForm() {
-    setForm({ ...EMPTY_FORM, library: libraries[0] || "" });
+    setForm((current) => ({
+      ...EMPTY_FORM,
+      library: current.library,
+    }));
     setEditingId(null);
   }
 
@@ -179,13 +184,14 @@ function AdminView({ functions, onRefresh }) {
       }
 
       const confirmed = window.confirm(
-        `导入后会用文件中的 ${importedData.length} 个函数替换当前 ${functions.length} 个函数，确定继续吗？`,
+        importMode === "append"
+          ? `将保留当前 ${functions.length} 个函数，并新增文件中的 ${importedData.length} 个函数，确定继续吗？`
+          : `将用文件中的 ${importedData.length} 个函数覆盖当前 ${functions.length} 个函数，确定继续吗？`,
       );
 
       if (!confirmed) return;
 
-      const result = await importFunctions(importedData);
-      resetForm();
+      const result = await importFunctions(importedData, importMode);
       await onRefresh();
       await loadLibraries();
       setTransferMessage(result.message);
@@ -214,7 +220,6 @@ function AdminView({ functions, onRefresh }) {
       const created = await createLibrary(name);
       setNewLibrary("");
       await loadLibraries();
-      setForm((current) => ({ ...current, library: created.name }));
       setLibraryMessage(`函数库“${created.name}”已经新增。`);
     } catch (requestError) {
       setLibraryError(requestError.message);
@@ -334,28 +339,42 @@ function AdminView({ functions, onRefresh }) {
         <div>
           <span>JSON BACKUP</span>
           <h2>数据导入与导出</h2>
-          <p>导出用于备份；导入会替换服务器上当前的全部函数。</p>
+          <p>导出用于备份；导入前可以选择新增数据或覆盖全部数据。</p>
         </div>
 
-        <div className="data-transfer-actions">
-          <button type="button" disabled={transferring} onClick={handleExport}>
-            ↓ 导出 functions.json
-          </button>
-          <button
-            className="import-button"
-            type="button"
-            disabled={transferring}
-            onClick={() => importInputRef.current?.click()}
-          >
-            ↑ 导入 functions.json
-          </button>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".json,application/json"
-            hidden
-            onChange={handleImport}
-          />
+        <div className="data-transfer-controls">
+          <label className="import-mode-field">
+            <span>导入方式</span>
+            <select
+              value={importMode}
+              disabled={transferring}
+              onChange={(event) => setImportMode(event.target.value)}
+            >
+              <option value="append">新增到现有数据</option>
+              <option value="replace">覆盖现有数据</option>
+            </select>
+          </label>
+
+          <div className="data-transfer-actions">
+            <button type="button" disabled={transferring} onClick={handleExport}>
+              ↓ 导出 functions.json
+            </button>
+            <button
+              className="import-button"
+              type="button"
+              disabled={transferring}
+              onClick={() => importInputRef.current?.click()}
+            >
+              ↑ 导入 functions.json
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              hidden
+              onChange={handleImport}
+            />
+          </div>
         </div>
       </section>
 
@@ -392,9 +411,9 @@ function AdminView({ functions, onRefresh }) {
                 required
                 disabled={libraries.length === 0}
               >
-                {libraries.length === 0 && (
-                  <option value="">请先新增函数库</option>
-                )}
+                <option value="" disabled>
+                  {libraries.length === 0 ? "请先新增函数库" : "请选择函数库"}
+                </option>
                 {libraries.map((name) => (
                   <option value={name} key={name}>
                     {name}

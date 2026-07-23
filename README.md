@@ -119,7 +119,8 @@ HOST=127.0.0.1 PORT=3000 npm start
 | `GET` | `/api/health` | 健康检查 |
 | `GET` | `/api/functions` | 获取函数列表 |
 | `GET` | `/api/functions/export` | 下载 `functions.json` |
-| `POST` | `/api/functions/import` | 导入并替换全部函数 |
+| `POST` | `/api/functions/import?mode=append` | 保留现有数据并新增导入 |
+| `POST` | `/api/functions/import?mode=replace` | 覆盖导入全部函数 |
 | `POST` | `/api/functions` | 添加函数 |
 | `PUT` | `/api/functions/:id` | 修改函数 |
 | `DELETE` | `/api/functions/:id` | 删除函数 |
@@ -127,13 +128,15 @@ HOST=127.0.0.1 PORT=3000 npm start
 | `POST` | `/api/libraries` | 新增函数库 |
 | `DELETE` | `/api/libraries/:name` | 删除空函数库 |
 
-管理页面中的“导出 functions.json”可以下载当前数据备份。“导入
-functions.json”会先检查 JSON 格式并要求确认，确认后替换服务器上的全部函数。
-导入文件必须是 JSON 数组，单个文件不能超过 1MB。
+管理页面中的“导出 functions.json”可以下载当前数据备份。导入时可以选择
+“新增到现有数据”或“覆盖现有数据”：新增模式会保留原有函数并为导入函数
+重新分配 ID，覆盖模式会替换服务器上的全部函数。两种方式都会先检查 JSON
+格式并要求确认。导入文件必须是 JSON 数组，单个文件不能超过 1MB。
 
-函数库在管理页面中单独新增和删除。添加或修改函数时只能从已有函数库中
-选择；仍然包含函数的函数库不能删除，需要先修改这些函数的所属库或删除函数。
-导入 `functions.json` 时，文件中出现的新函数库会自动加入库列表。
+函数库在管理页面中单独新增和删除。添加或修改函数时必须由用户从已有函数库
+中选择，新增函数后会保留本次选择，不会自动切换到其他库。仍然包含函数的
+函数库不能删除，需要先修改这些函数的所属库或删除函数。导入
+`functions.json` 时，文件中出现的新函数库会自动加入库列表。
 
 ## 部署到现有 Nginx
 

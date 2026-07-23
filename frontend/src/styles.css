@@ -735,6 +735,38 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
+.data-transfer-controls {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  gap: 12px;
+}
+
+.import-mode-field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.import-mode-field select {
+  min-height: 41px;
+  padding: 9px 34px 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  outline: 0;
+  color: var(--ink);
+  background: #fffefa;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.import-mode-field select:focus {
+  border-color: #7e9c90;
+  box-shadow: 0 0 0 3px rgba(49, 91, 76, 0.1);
+}
+
 .data-transfer-actions {
   display: flex;
   flex: 0 0 auto;
@@ -1044,6 +1076,11 @@ textarea:focus-visible {
     flex-direction: column;
   }
 
+  .data-transfer-controls {
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
   .library-manager-heading {
     align-items: stretch;
     flex-direction: column;
@@ -1188,6 +1225,15 @@ textarea:focus-visible {
   .data-transfer-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .data-transfer-controls {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .import-mode-field select {
+    width: 100%;
   }
 
   .data-transfer-actions button {

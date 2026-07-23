@@ -156,7 +156,47 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
     [2],
   );
 
-  const importResponse = await fetch(`${baseUrl}/api/functions/import`, {
+  const invalidModeResponse = await fetch(
+    `${baseUrl}/api/functions/import?mode=invalid`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([]),
+    },
+  );
+  assert.equal(invalidModeResponse.status, 400);
+
+  const appendImportResponse = await fetch(
+    `${baseUrl}/api/functions/import?mode=append`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([
+        {
+          id: 2,
+          library: "NumPy",
+          name: "numpy.sum()",
+          description: "计算元素总和",
+          parameters: "array",
+          code: "np.sum([1, 2, 3])",
+          result: "6",
+        },
+      ]),
+    },
+  );
+  assert.equal(appendImportResponse.status, 200);
+  const appendImportResult = await appendImportResponse.json();
+  assert.equal(appendImportResult.mode, "append");
+  assert.equal(appendImportResult.importedCount, 1);
+  assert.equal(appendImportResult.count, 2);
+  assert.deepEqual(
+    appendImportResult.functions.map((item) => item.id),
+    [2, 3],
+  );
+
+  const importResponse = await fetch(
+    `${baseUrl}/api/functions/import?mode=replace`,
+    {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify([
@@ -179,9 +219,12 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
         result: "2.0",
       },
     ]),
-  });
+    },
+  );
   assert.equal(importResponse.status, 200);
   const importResult = await importResponse.json();
+  assert.equal(importResult.mode, "replace");
+  assert.equal(importResult.importedCount, 2);
   assert.equal(importResult.count, 2);
   assert.deepEqual(
     importResult.functions.map((item) => item.id),

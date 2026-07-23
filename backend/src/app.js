@@ -207,12 +207,49 @@ function createApp(options = {}) {
 
   app.post("/api/functions/import", async (req, res, next) => {
     try {
-      const functions = normalizeImportedFunctions(req.body);
+      const mode = normalizeText(req.query.mode) || "replace";
+
+      if (!["append", "replace"].includes(mode)) {
+        return res.status(400).json({
+          message: "导入方式必须是 append 或 replace",
+        });
+      }
+
+      const importedFunctions = normalizeImportedFunctions(req.body);
+      let functions = importedFunctions;
+
+      if (mode === "append") {
+        const existingFunctions = await readFunctions(dataFile);
+
+        if (existingFunctions.length + importedFunctions.length > 5000) {
+          return res.status(400).json({
+            message: "新增导入后最多只能保存 5000 个函数",
+          });
+        }
+
+        let nextId =
+          existingFunctions.reduce(
+            (maxId, current) => Math.max(maxId, Number(current.id) || 0),
+            0,
+          ) + 1;
+        const appendedFunctions = importedFunctions.map((item) => ({
+          ...item,
+          id: nextId++,
+        }));
+
+        functions = [...existingFunctions, ...appendedFunctions];
+      }
+
       await writeFunctions(dataFile, functions);
       await readLibraries(librariesFile, dataFile);
 
       return res.json({
-        message: `成功导入 ${functions.length} 个函数`,
+        message:
+          mode === "append"
+            ? `成功新增导入 ${importedFunctions.length} 个函数`
+            : `成功覆盖导入 ${importedFunctions.length} 个函数`,
+        mode,
+        importedCount: importedFunctions.length,
         count: functions.length,
         functions,
       });

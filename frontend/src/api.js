@@ -62,8 +62,8 @@ export async function exportFunctions() {
   return response.blob();
 }
 
-export function importFunctions(functions) {
-  return request("/import", {
+export function importFunctions(functions, mode = "append") {
+  return request(`/import?mode=${encodeURIComponent(mode)}`, {
     method: "POST",
     body: JSON.stringify(functions),
   });
