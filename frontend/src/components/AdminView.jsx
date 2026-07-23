@@ -1,5 +1,11 @@
-import { useState } from "react";
-import { createFunction, deleteFunction, updateFunction } from "../api";
+import { useRef, useState } from "react";
+import {
+  createFunction,
+  deleteFunction,
+  exportFunctions,
+  importFunctions,
+  updateFunction,
+} from "../api";
 
 const EMPTY_FORM = {
   library: "JavaScript",
@@ -16,6 +22,10 @@ function AdminView({ functions, onRefresh }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [transferMessage, setTransferMessage] = useState("");
+  const [transferError, setTransferError] = useState("");
+  const importInputRef = useRef(null);
 
   function updateField(event) {
     const { name, value } = event.target;
@@ -87,6 +97,79 @@ function AdminView({ functions, onRefresh }) {
     }
   }
 
+  async function handleExport() {
+    setTransferring(true);
+    setTransferMessage("");
+    setTransferError("");
+
+    try {
+      const blob = await exportFunctions();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = downloadUrl;
+      link.download = "functions.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+      setTransferMessage(`已经导出 ${functions.length} 个函数。`);
+    } catch (requestError) {
+      setTransferError(requestError.message);
+    } finally {
+      setTransferring(false);
+    }
+  }
+
+  async function handleImport(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+
+    setTransferMessage("");
+    setTransferError("");
+
+    if (!file.name.toLowerCase().endsWith(".json")) {
+      setTransferError("请选择 .json 文件。");
+      return;
+    }
+
+    if (file.size > 1024 * 1024) {
+      setTransferError("JSON 文件不能超过 1MB。");
+      return;
+    }
+
+    setTransferring(true);
+
+    try {
+      const importedData = JSON.parse(await file.text());
+
+      if (!Array.isArray(importedData)) {
+        throw new Error("functions.json 的顶层数据必须是数组。");
+      }
+
+      const confirmed = window.confirm(
+        `导入后会用文件中的 ${importedData.length} 个函数替换当前 ${functions.length} 个函数，确定继续吗？`,
+      );
+
+      if (!confirmed) return;
+
+      const result = await importFunctions(importedData);
+      resetForm();
+      await onRefresh();
+      setTransferMessage(result.message);
+    } catch (importError) {
+      setTransferError(
+        importError instanceof SyntaxError
+          ? "JSON 文件格式不正确，请检查逗号、引号和括号。"
+          : importError.message,
+      );
+    } finally {
+      setTransferring(false);
+    }
+  }
+
   return (
     <section className="admin-page">
       <div className="admin-heading">
@@ -100,6 +183,44 @@ function AdminView({ functions, onRefresh }) {
           <span>个函数</span>
         </div>
       </div>
+
+      <section className="data-transfer-card">
+        <div>
+          <span>JSON BACKUP</span>
+          <h2>数据导入与导出</h2>
+          <p>导出用于备份；导入会替换服务器上当前的全部函数。</p>
+        </div>
+
+        <div className="data-transfer-actions">
+          <button type="button" disabled={transferring} onClick={handleExport}>
+            ↓ 导出 functions.json
+          </button>
+          <button
+            className="import-button"
+            type="button"
+            disabled={transferring}
+            onClick={() => importInputRef.current?.click()}
+          >
+            ↑ 导入 functions.json
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={handleImport}
+          />
+        </div>
+      </section>
+
+      {transferMessage && (
+        <p className="form-message success-message transfer-message">
+          {transferMessage}
+        </p>
+      )}
+      {transferError && (
+        <p className="form-message error-message transfer-message">{transferError}</p>
+      )}
 
       <div className="admin-grid">
         <form className="editor-card" onSubmit={handleSubmit}>
@@ -244,4 +365,3 @@ function AdminView({ functions, onRefresh }) {
 }
 
 export default AdminView;
-

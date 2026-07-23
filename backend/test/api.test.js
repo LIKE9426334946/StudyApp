@@ -5,7 +5,7 @@ const path = require("node:path");
 const test = require("node:test");
 const { createApp } = require("../src/app");
 
-test("函数 API 可以完成增删改查", async (t) => {
+test("函数 API 可以完成增删改查和导入导出", async (t) => {
   const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "study-app-"));
   const dataFile = path.join(tempDirectory, "functions.json");
 
@@ -81,4 +81,71 @@ test("函数 API 可以完成增删改查", async (t) => {
   const finalResponse = await fetch(`${baseUrl}/api/functions`);
   const finalItems = await finalResponse.json();
   assert.deepEqual(finalItems.map((item) => item.id), [2]);
+
+  const exportResponse = await fetch(`${baseUrl}/api/functions/export`);
+  assert.equal(exportResponse.status, 200);
+  assert.match(
+    exportResponse.headers.get("content-disposition"),
+    /attachment; filename="functions\.json"/,
+  );
+  assert.deepEqual(
+    (await exportResponse.json()).map((item) => item.id),
+    [2],
+  );
+
+  const invalidImportResponse = await fetch(`${baseUrl}/api/functions/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ functions: [] }),
+  });
+  assert.equal(invalidImportResponse.status, 400);
+  assert.match(
+    (await invalidImportResponse.json()).message,
+    /顶层数据必须是数组/,
+  );
+
+  const unchangedResponse = await fetch(`${baseUrl}/api/functions`);
+  assert.deepEqual(
+    (await unchangedResponse.json()).map((item) => item.id),
+    [2],
+  );
+
+  const importResponse = await fetch(`${baseUrl}/api/functions/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify([
+      {
+        id: 7,
+        library: "Python",
+        name: "len()",
+        description: "返回对象长度",
+        parameters: "object",
+        code: "len([1, 2, 3])",
+        result: "3",
+      },
+      {
+        id: 7,
+        library: "NumPy",
+        name: "numpy.mean()",
+        description: "计算平均值",
+        parameters: "array",
+        code: "np.mean([1, 2, 3])",
+        result: "2.0",
+      },
+    ]),
+  });
+  assert.equal(importResponse.status, 200);
+  const importResult = await importResponse.json();
+  assert.equal(importResult.count, 2);
+  assert.deepEqual(
+    importResult.functions.map((item) => item.id),
+    [7, 8],
+  );
+
+  const importedListResponse = await fetch(`${baseUrl}/api/functions`);
+  const importedItems = await importedListResponse.json();
+  assert.deepEqual(
+    importedItems.map((item) => item.name),
+    ["len()", "numpy.mean()"],
+  );
 });

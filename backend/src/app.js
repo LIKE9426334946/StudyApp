@@ -31,6 +31,59 @@ function validateFunction(item) {
   return missing;
 }
 
+function normalizeImportedFunctions(input) {
+  if (!Array.isArray(input)) {
+    const error = new Error("导入文件的顶层数据必须是数组");
+    error.status = 400;
+    throw error;
+  }
+
+  if (input.length > 5000) {
+    const error = new Error("一次最多导入 5000 个函数");
+    error.status = 400;
+    throw error;
+  }
+
+  const largestImportedId = input.reduce((largestId, item) => {
+    const id = Number(item?.id);
+    return Number.isInteger(id) && id > largestId ? id : largestId;
+  }, 0);
+  const usedIds = new Set();
+  let nextId = largestImportedId + 1;
+
+  return input.map((inputItem, index) => {
+    if (!inputItem || typeof inputItem !== "object" || Array.isArray(inputItem)) {
+      const error = new Error(`第 ${index + 1} 条函数数据必须是对象`);
+      error.status = 400;
+      throw error;
+    }
+
+    const item = normalizeFunction(inputItem);
+    const missing = validateFunction(item);
+
+    if (missing.length > 0) {
+      const error = new Error(
+        `第 ${index + 1} 条函数数据缺少：${missing.join("、")}`,
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    const importedId = Number(inputItem.id);
+    let id =
+      Number.isInteger(importedId) && importedId > 0 && !usedIds.has(importedId)
+        ? importedId
+        : nextId++;
+
+    while (usedIds.has(id)) {
+      id = nextId++;
+    }
+
+    usedIds.add(id);
+    return { id, ...item };
+  });
+}
+
 async function readFunctions(dataFile) {
   const content = await fsp.readFile(dataFile, "utf8");
   const functions = JSON.parse(content);
@@ -54,7 +107,7 @@ function createApp(options = {}) {
   const app = express();
 
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "100kb" }));
+  app.use(express.json({ limit: "1mb" }));
 
   app.get("/api/health", (req, res) => {
     res.json({
@@ -70,6 +123,32 @@ function createApp(options = {}) {
       res.json(functions);
     } catch (error) {
       next(error);
+    }
+  });
+
+  app.get("/api/functions/export", async (req, res, next) => {
+    try {
+      const functions = await readFunctions(dataFile);
+      res.attachment("functions.json");
+      res.type("application/json");
+      return res.send(`${JSON.stringify(functions, null, 2)}\n`);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post("/api/functions/import", async (req, res, next) => {
+    try {
+      const functions = normalizeImportedFunctions(req.body);
+      await writeFunctions(dataFile, functions);
+
+      return res.json({
+        message: `成功导入 ${functions.length} 个函数`,
+        count: functions.length,
+        functions,
+      });
+    } catch (error) {
+      return next(error);
     }
   });
 
@@ -171,11 +250,15 @@ function createApp(options = {}) {
   });
 
   app.use((error, req, res, next) => {
-    console.error(error);
-
     if (error instanceof SyntaxError && "body" in error) {
       return res.status(400).json({ message: "请求中的 JSON 格式不正确" });
     }
+
+    if (error.status) {
+      return res.status(error.status).json({ message: error.message });
+    }
+
+    console.error(error);
 
     return res.status(500).json({
       message: "服务器处理请求时发生错误",
@@ -187,6 +270,6 @@ function createApp(options = {}) {
 
 module.exports = {
   createApp,
+  normalizeImportedFunctions,
   normalizeFunction,
 };
-

@@ -46,3 +46,20 @@ export function deleteFunction(id) {
   });
 }
 
+export async function exportFunctions() {
+  const response = await fetch(`${FUNCTIONS_ENDPOINT}/export`);
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.message || `导出失败（${response.status}）`);
+  }
+
+  return response.blob();
+}
+
+export function importFunctions(functions) {
+  return request("/import", {
+    method: "POST",
+    body: JSON.stringify(functions),
+  });
+}

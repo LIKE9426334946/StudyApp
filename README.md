@@ -3,7 +3,7 @@
 一个个人使用的代码函数学习网站 MVP。
 
 - 手机端学习页：查看函数名称、展开解释和代码、切换学习卡片、搜索和筛选、浏览器本地收藏。
-- 电脑端管理页：添加、修改、删除和查看函数。
+- 电脑端管理页：添加、修改、删除、查看函数，以及导入和导出 JSON 数据。
 - 数据保存：`backend/data/functions.json`。
 - 技术栈：React + Vite、Node.js + Express。
 
@@ -81,7 +81,7 @@ Vite 会把 `/api` 请求代理到 `127.0.0.1:3000`。
 npm test
 ```
 
-测试会在临时 JSON 文件上验证函数数据的增删改查，不会修改正式数据。
+测试会在临时 JSON 文件上验证函数数据的增删改查与导入导出，不会修改正式数据。
 
 ## 生产构建
 
@@ -116,9 +116,15 @@ HOST=127.0.0.1 PORT=3000 npm start
 | --- | --- | --- |
 | `GET` | `/api/health` | 健康检查 |
 | `GET` | `/api/functions` | 获取函数列表 |
+| `GET` | `/api/functions/export` | 下载 `functions.json` |
+| `POST` | `/api/functions/import` | 导入并替换全部函数 |
 | `POST` | `/api/functions` | 添加函数 |
 | `PUT` | `/api/functions/:id` | 修改函数 |
 | `DELETE` | `/api/functions/:id` | 删除函数 |
+
+管理页面中的“导出 functions.json”可以下载当前数据备份。“导入
+functions.json”会先检查 JSON 格式并要求确认，确认后替换服务器上的全部函数。
+导入文件必须是 JSON 数组，单个文件不能超过 1MB。
 
 ## 部署到现有 Nginx
 
@@ -222,4 +228,3 @@ http://62.234.33.110:16010/blog/
 - 收藏只保存在当前浏览器的 `localStorage` 中。
 
 如果直接部署到公网，任何能访问该地址的人都能打开管理页和修改函数数据。增加登录系统之前，建议只在可信网络或个人环境中使用。
-

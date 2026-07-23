@@ -577,6 +577,69 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
+.data-transfer-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+  padding: 20px 22px;
+  border: 1px solid rgba(100, 95, 84, 0.2);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.82);
+}
+
+.data-transfer-card > div:first-child > span {
+  color: var(--orange);
+  font-family: "DM Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+
+.data-transfer-card h2 {
+  margin: 3px 0 5px;
+  font-size: 18px;
+}
+
+.data-transfer-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.data-transfer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 9px;
+}
+
+.data-transfer-actions button {
+  min-height: 41px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--green);
+  background: #fffefa;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.data-transfer-actions .import-button {
+  color: #fff;
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.data-transfer-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.transfer-message {
+  margin: -10px 0 24px;
+}
+
 .admin-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
@@ -846,6 +909,15 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .data-transfer-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .data-transfer-actions {
+    flex-wrap: wrap;
+  }
+
   .function-list-card {
     order: 2;
   }
@@ -950,6 +1022,19 @@ textarea:focus-visible {
 
   .admin-heading .count-card {
     align-self: flex-start;
+  }
+
+  .data-transfer-card {
+    padding: 18px 16px;
+  }
+
+  .data-transfer-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .data-transfer-actions button {
+    width: 100%;
   }
 
   .editor-card {
