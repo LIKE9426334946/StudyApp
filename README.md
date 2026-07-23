@@ -3,8 +3,8 @@
 一个个人使用的代码函数学习网站 MVP。
 
 - 手机端学习页：查看函数名称、展开解释和代码、切换学习卡片、搜索和筛选、浏览器本地收藏。
-- 电脑端管理页：添加、修改、删除、查看函数，以及导入和导出 JSON 数据。
-- 数据保存：`backend/data/functions.json`。
+- 电脑端管理页：添加、修改、删除、查看函数，管理函数库，以及导入和导出 JSON 数据。
+- 数据保存：函数位于 `backend/data/functions.json`，函数库位于 `backend/data/libraries.json`。
 - 技术栈：React + Vite、Node.js + Express。
 
 ## 项目结构
@@ -19,6 +19,7 @@ StudyApp/
 │   └── package.json
 ├── backend/                  # Express 后端
 │   ├── data/functions.json   # 函数数据
+│   ├── data/libraries.json   # 函数库列表
 │   ├── src/app.js
 │   ├── test/api.test.js
 │   └── server.js
@@ -81,7 +82,7 @@ Vite 会把 `/api` 请求代理到 `127.0.0.1:3000`。
 npm test
 ```
 
-测试会在临时 JSON 文件上验证函数数据的增删改查与导入导出，不会修改正式数据。
+测试会在临时 JSON 文件上验证函数和函数库管理以及导入导出，不会修改正式数据。
 
 ## 生产构建
 
@@ -121,10 +122,17 @@ HOST=127.0.0.1 PORT=3000 npm start
 | `POST` | `/api/functions` | 添加函数 |
 | `PUT` | `/api/functions/:id` | 修改函数 |
 | `DELETE` | `/api/functions/:id` | 删除函数 |
+| `GET` | `/api/libraries` | 获取函数库列表 |
+| `POST` | `/api/libraries` | 新增函数库 |
+| `DELETE` | `/api/libraries/:name` | 删除空函数库 |
 
 管理页面中的“导出 functions.json”可以下载当前数据备份。“导入
 functions.json”会先检查 JSON 格式并要求确认，确认后替换服务器上的全部函数。
 导入文件必须是 JSON 数组，单个文件不能超过 1MB。
+
+函数库在管理页面中单独新增和删除。添加或修改函数时只能从已有函数库中
+选择；仍然包含函数的函数库不能删除，需要先修改这些函数的所属库或删除函数。
+导入 `functions.json` 时，文件中出现的新函数库会自动加入库列表。
 
 ## 部署到现有 Nginx
 

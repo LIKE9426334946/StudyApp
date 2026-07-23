@@ -5,9 +5,10 @@ const path = require("node:path");
 const test = require("node:test");
 const { createApp } = require("../src/app");
 
-test("函数 API 可以完成增删改查和导入导出", async (t) => {
+test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
   const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "study-app-"));
   const dataFile = path.join(tempDirectory, "functions.json");
+  const librariesFile = path.join(tempDirectory, "libraries.json");
 
   await fs.writeFile(
     dataFile,
@@ -24,8 +25,9 @@ test("函数 API 可以完成增删改查和导入导出", async (t) => {
     ]),
     "utf8",
   );
+  await fs.writeFile(librariesFile, JSON.stringify(["JavaScript"]), "utf8");
 
-  const server = createApp({ dataFile }).listen(0, "127.0.0.1");
+  const server = createApp({ dataFile, librariesFile }).listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
 
   const address = server.address();
@@ -41,6 +43,50 @@ test("函数 API 可以完成增删改查和导入导出", async (t) => {
   const listResponse = await fetch(`${baseUrl}/api/functions`);
   assert.equal(listResponse.status, 200);
   assert.equal((await listResponse.json()).length, 1);
+
+  const librariesResponse = await fetch(`${baseUrl}/api/libraries`);
+  assert.equal(librariesResponse.status, 200);
+  assert.deepEqual(await librariesResponse.json(), ["JavaScript"]);
+
+  const unknownLibraryResponse = await fetch(`${baseUrl}/api/functions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      library: "不存在",
+      name: "unknown()",
+      description: "测试不存在的函数库",
+      code: "unknown()",
+    }),
+  });
+  assert.equal(unknownLibraryResponse.status, 400);
+
+  const createLibraryResponse = await fetch(`${baseUrl}/api/libraries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Python" }),
+  });
+  assert.equal(createLibraryResponse.status, 201);
+  assert.deepEqual(await createLibraryResponse.json(), { name: "Python" });
+
+  const duplicateLibraryResponse = await fetch(`${baseUrl}/api/libraries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "python" }),
+  });
+  assert.equal(duplicateLibraryResponse.status, 409);
+
+  const createEmptyLibraryResponse = await fetch(`${baseUrl}/api/libraries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Rust" }),
+  });
+  assert.equal(createEmptyLibraryResponse.status, 201);
+
+  const deleteEmptyLibraryResponse = await fetch(
+    `${baseUrl}/api/libraries/${encodeURIComponent("Rust")}`,
+    { method: "DELETE" },
+  );
+  assert.equal(deleteEmptyLibraryResponse.status, 204);
 
   const pageResponse = await fetch(baseUrl);
   assert.equal(pageResponse.status, 200);
@@ -148,4 +194,27 @@ test("函数 API 可以完成增删改查和导入导出", async (t) => {
     importedItems.map((item) => item.name),
     ["len()", "numpy.mean()"],
   );
+
+  const importedLibrariesResponse = await fetch(`${baseUrl}/api/libraries`);
+  assert.deepEqual(await importedLibrariesResponse.json(), [
+    "JavaScript",
+    "Python",
+    "NumPy",
+  ]);
+
+  const deleteUsedLibraryResponse = await fetch(
+    `${baseUrl}/api/libraries/${encodeURIComponent("Python")}`,
+    { method: "DELETE" },
+  );
+  assert.equal(deleteUsedLibraryResponse.status, 409);
+  assert.match(
+    (await deleteUsedLibraryResponse.json()).message,
+    /还有函数/,
+  );
+
+  const deleteUnusedLibraryResponse = await fetch(
+    `${baseUrl}/api/libraries/${encodeURIComponent("JavaScript")}`,
+    { method: "DELETE" },
+  );
+  assert.equal(deleteUnusedLibraryResponse.status, 204);
 });

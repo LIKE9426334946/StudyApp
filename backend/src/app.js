@@ -4,6 +4,7 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 
 const DEFAULT_DATA_FILE = path.join(__dirname, "../data/functions.json");
+const DEFAULT_LIBRARIES_FILE = path.join(__dirname, "../data/libraries.json");
 const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
 
 function normalizeText(value) {
@@ -12,7 +13,7 @@ function normalizeText(value) {
 
 function normalizeFunction(input) {
   return {
-    library: normalizeText(input.library) || "其他",
+    library: normalizeText(input.library),
     name: normalizeText(input.name),
     description: normalizeText(input.description),
     parameters: normalizeText(input.parameters),
@@ -24,6 +25,7 @@ function normalizeFunction(input) {
 function validateFunction(item) {
   const missing = [];
 
+  if (!item.library) missing.push("函数库");
   if (!item.name) missing.push("函数名称");
   if (!item.description) missing.push("函数介绍");
   if (!item.code) missing.push("代码示例");
@@ -102,8 +104,74 @@ async function writeFunctions(dataFile, functions) {
   await fsp.rename(tempFile, dataFile);
 }
 
+async function writeLibraries(librariesFile, libraries) {
+  const tempFile = `${librariesFile}.tmp`;
+  await fsp.mkdir(path.dirname(librariesFile), { recursive: true });
+  await fsp.writeFile(tempFile, `${JSON.stringify(libraries, null, 2)}\n`, "utf8");
+  await fsp.rename(tempFile, librariesFile);
+}
+
+function uniqueLibraryNames(names) {
+  const seen = new Set();
+
+  return names.reduce((result, value) => {
+    const name = normalizeText(value);
+    const key = name.toLocaleLowerCase();
+
+    if (name && !seen.has(key)) {
+      seen.add(key);
+      result.push(name);
+    }
+
+    return result;
+  }, []);
+}
+
+async function readStoredLibraries(librariesFile) {
+  try {
+    const content = await fsp.readFile(librariesFile, "utf8");
+    const libraries = JSON.parse(content);
+
+    if (!Array.isArray(libraries)) {
+      throw new Error("libraries.json 的顶层数据必须是数组");
+    }
+
+    return uniqueLibraryNames(libraries);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function readLibraries(librariesFile, dataFile) {
+  const [storedLibraries, functions] = await Promise.all([
+    readStoredLibraries(librariesFile),
+    readFunctions(dataFile),
+  ]);
+  const libraries = uniqueLibraryNames([
+    ...storedLibraries,
+    ...functions.map((item) => item.library),
+  ]);
+
+  if (JSON.stringify(libraries) !== JSON.stringify(storedLibraries)) {
+    await writeLibraries(librariesFile, libraries);
+  }
+
+  return libraries;
+}
+
+function findLibrary(libraries, requestedName) {
+  const key = normalizeText(requestedName).toLocaleLowerCase();
+  return libraries.find((name) => name.toLocaleLowerCase() === key);
+}
+
 function createApp(options = {}) {
   const dataFile = options.dataFile || process.env.DATA_FILE || DEFAULT_DATA_FILE;
+  const librariesFile =
+    options.librariesFile || process.env.LIBRARIES_FILE || DEFAULT_LIBRARIES_FILE;
   const app = express();
 
   app.disable("x-powered-by");
@@ -141,6 +209,7 @@ function createApp(options = {}) {
     try {
       const functions = normalizeImportedFunctions(req.body);
       await writeFunctions(dataFile, functions);
+      await readLibraries(librariesFile, dataFile);
 
       return res.json({
         message: `成功导入 ${functions.length} 个函数`,
@@ -163,6 +232,16 @@ function createApp(options = {}) {
         });
       }
 
+      const libraries = await readLibraries(librariesFile, dataFile);
+      const library = findLibrary(libraries, item.library);
+
+      if (!library) {
+        return res.status(400).json({
+          message: "请选择已经创建的函数库",
+        });
+      }
+
+      item.library = library;
       const functions = await readFunctions(dataFile);
       const nextId =
         functions.reduce((maxId, current) => Math.max(maxId, Number(current.id) || 0), 0) + 1;
@@ -194,6 +273,16 @@ function createApp(options = {}) {
         });
       }
 
+      const libraries = await readLibraries(librariesFile, dataFile);
+      const library = findLibrary(libraries, item.library);
+
+      if (!library) {
+        return res.status(400).json({
+          message: "请选择已经创建的函数库",
+        });
+      }
+
+      item.library = library;
       const functions = await readFunctions(dataFile);
       const index = functions.findIndex((current) => Number(current.id) === id);
 
@@ -227,6 +316,71 @@ function createApp(options = {}) {
       }
 
       await writeFunctions(dataFile, remaining);
+      return res.status(204).end();
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get("/api/libraries", async (req, res, next) => {
+    try {
+      const libraries = await readLibraries(librariesFile, dataFile);
+      return res.json(libraries);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post("/api/libraries", async (req, res, next) => {
+    try {
+      const name = normalizeText(req.body?.name);
+
+      if (!name) {
+        return res.status(400).json({ message: "请输入函数库名称" });
+      }
+
+      if (name.length > 50) {
+        return res.status(400).json({ message: "函数库名称不能超过 50 个字符" });
+      }
+
+      const libraries = await readLibraries(librariesFile, dataFile);
+
+      if (findLibrary(libraries, name)) {
+        return res.status(409).json({ message: "这个函数库已经存在" });
+      }
+
+      libraries.push(name);
+      await writeLibraries(librariesFile, libraries);
+      return res.status(201).json({ name });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.delete("/api/libraries/:name", async (req, res, next) => {
+    try {
+      const libraries = await readLibraries(librariesFile, dataFile);
+      const library = findLibrary(libraries, req.params.name);
+
+      if (!library) {
+        return res.status(404).json({ message: "没有找到这个函数库" });
+      }
+
+      const functions = await readFunctions(dataFile);
+      const isInUse = functions.some(
+        (item) =>
+          normalizeText(item.library).toLocaleLowerCase() ===
+          library.toLocaleLowerCase(),
+      );
+
+      if (isInUse) {
+        return res.status(409).json({
+          message: `“${library}”中还有函数，请先移动或删除这些函数`,
+        });
+      }
+
+      const remaining = libraries.filter((name) => name !== library);
+      await writeLibraries(librariesFile, remaining);
       return res.status(204).end();
     } catch (error) {
       return next(error);
@@ -270,6 +424,8 @@ function createApp(options = {}) {
 
 module.exports = {
   createApp,
+  findLibrary,
   normalizeImportedFunctions,
   normalizeFunction,
+  uniqueLibraryNames,
 };

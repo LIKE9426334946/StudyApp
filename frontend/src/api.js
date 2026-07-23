@@ -1,7 +1,8 @@
 const FUNCTIONS_ENDPOINT = "api/functions";
+const LIBRARIES_ENDPOINT = "api/libraries";
 
-async function request(path = "", options = {}) {
-  const response = await fetch(`${FUNCTIONS_ENDPOINT}${path}`, {
+async function requestFrom(endpoint, path = "", options = {}) {
+  const response = await fetch(`${endpoint}${path}`, {
     ...options,
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
@@ -20,6 +21,10 @@ async function request(path = "", options = {}) {
   }
 
   return data;
+}
+
+function request(path = "", options = {}) {
+  return requestFrom(FUNCTIONS_ENDPOINT, path, options);
 }
 
 export function getFunctions() {
@@ -61,5 +66,22 @@ export function importFunctions(functions) {
   return request("/import", {
     method: "POST",
     body: JSON.stringify(functions),
+  });
+}
+
+export function getLibraries() {
+  return requestFrom(LIBRARIES_ENDPOINT);
+}
+
+export function createLibrary(name) {
+  return requestFrom(LIBRARIES_ENDPOINT, "", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteLibrary(name) {
+  return requestFrom(LIBRARIES_ENDPOINT, `/${encodeURIComponent(name)}`, {
+    method: "DELETE",
   });
 }

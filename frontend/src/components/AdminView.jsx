@@ -1,14 +1,17 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createFunction,
+  createLibrary,
   deleteFunction,
+  deleteLibrary,
   exportFunctions,
+  getLibraries,
   importFunctions,
   updateFunction,
 } from "../api";
 
 const EMPTY_FORM = {
-  library: "JavaScript",
+  library: "",
   name: "",
   description: "",
   parameters: "",
@@ -25,7 +28,33 @@ function AdminView({ functions, onRefresh }) {
   const [transferring, setTransferring] = useState(false);
   const [transferMessage, setTransferMessage] = useState("");
   const [transferError, setTransferError] = useState("");
+  const [libraries, setLibraries] = useState([]);
+  const [newLibrary, setNewLibrary] = useState("");
+  const [librarySaving, setLibrarySaving] = useState(false);
+  const [libraryMessage, setLibraryMessage] = useState("");
+  const [libraryError, setLibraryError] = useState("");
   const importInputRef = useRef(null);
+
+  const loadLibraries = useCallback(async () => {
+    setLibraryError("");
+
+    try {
+      const data = await getLibraries();
+      setLibraries(data);
+      setForm((current) => ({
+        ...current,
+        library: data.includes(current.library)
+          ? current.library
+          : data[0] || "",
+      }));
+    } catch (requestError) {
+      setLibraryError(requestError.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLibraries();
+  }, [loadLibraries]);
 
   function updateField(event) {
     const { name, value } = event.target;
@@ -33,7 +62,7 @@ function AdminView({ functions, onRefresh }) {
   }
 
   function resetForm() {
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, library: libraries[0] || "" });
     setEditingId(null);
   }
 
@@ -158,6 +187,7 @@ function AdminView({ functions, onRefresh }) {
       const result = await importFunctions(importedData);
       resetForm();
       await onRefresh();
+      await loadLibraries();
       setTransferMessage(result.message);
     } catch (importError) {
       setTransferError(
@@ -167,6 +197,59 @@ function AdminView({ functions, onRefresh }) {
       );
     } finally {
       setTransferring(false);
+    }
+  }
+
+  async function handleCreateLibrary(event) {
+    event.preventDefault();
+    const name = newLibrary.trim();
+
+    if (!name) return;
+
+    setLibrarySaving(true);
+    setLibraryMessage("");
+    setLibraryError("");
+
+    try {
+      const created = await createLibrary(name);
+      setNewLibrary("");
+      await loadLibraries();
+      setForm((current) => ({ ...current, library: created.name }));
+      setLibraryMessage(`函数库“${created.name}”已经新增。`);
+    } catch (requestError) {
+      setLibraryError(requestError.message);
+    } finally {
+      setLibrarySaving(false);
+    }
+  }
+
+  async function handleDeleteLibrary(name) {
+    const functionCount = functions.filter((item) => item.library === name).length;
+
+    if (functionCount > 0) {
+      setLibraryMessage("");
+      setLibraryError(
+        `“${name}”中还有 ${functionCount} 个函数，请先修改或删除这些函数。`,
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(`确定删除函数库“${name}”吗？`);
+
+    if (!confirmed) return;
+
+    setLibrarySaving(true);
+    setLibraryMessage("");
+    setLibraryError("");
+
+    try {
+      await deleteLibrary(name);
+      await loadLibraries();
+      setLibraryMessage(`函数库“${name}”已经删除。`);
+    } catch (requestError) {
+      setLibraryError(requestError.message);
+    } finally {
+      setLibrarySaving(false);
     }
   }
 
@@ -183,6 +266,69 @@ function AdminView({ functions, onRefresh }) {
           <span>个函数</span>
         </div>
       </div>
+
+      <section className="library-manager-card">
+        <div className="library-manager-heading">
+          <div>
+            <span>FUNCTION LIBRARIES</span>
+            <h2>函数库管理</h2>
+            <p>新增函数库后，可以在添加或修改函数时直接选择。</p>
+          </div>
+
+          <form className="library-create-form" onSubmit={handleCreateLibrary}>
+            <input
+              type="text"
+              value={newLibrary}
+              onChange={(event) => setNewLibrary(event.target.value)}
+              placeholder="例如：Pandas"
+              maxLength="50"
+              aria-label="新函数库名称"
+            />
+            <button type="submit" disabled={librarySaving || !newLibrary.trim()}>
+              ＋ 新增函数库
+            </button>
+          </form>
+        </div>
+
+        <div className="library-chip-list">
+          {libraries.length === 0 ? (
+            <p>还没有函数库，请先新增一个。</p>
+          ) : (
+            libraries.map((name) => {
+              const functionCount = functions.filter(
+                (item) => item.library === name,
+              ).length;
+
+              return (
+                <div className="library-chip" key={name}>
+                  <span>{name}</span>
+                  <small>{functionCount} 个函数</small>
+                  <button
+                    type="button"
+                    disabled={librarySaving}
+                    aria-label={`删除函数库 ${name}`}
+                    title={
+                      functionCount > 0
+                        ? "请先移动或删除这个函数库中的函数"
+                        : "删除函数库"
+                    }
+                    onClick={() => handleDeleteLibrary(name)}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {libraryMessage && (
+          <p className="form-message success-message">{libraryMessage}</p>
+        )}
+        {libraryError && (
+          <p className="form-message error-message">{libraryError}</p>
+        )}
+      </section>
 
       <section className="data-transfer-card">
         <div>
@@ -239,12 +385,22 @@ function AdminView({ functions, onRefresh }) {
           <div className="form-row">
             <label>
               函数库
-              <input
+              <select
                 name="library"
                 value={form.library}
                 onChange={updateField}
-                placeholder="例如：Python"
-              />
+                required
+                disabled={libraries.length === 0}
+              >
+                {libraries.length === 0 && (
+                  <option value="">请先新增函数库</option>
+                )}
+                {libraries.map((name) => (
+                  <option value={name} key={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label>
@@ -312,7 +468,11 @@ function AdminView({ functions, onRefresh }) {
           {message && <p className="form-message success-message">{message}</p>}
           {error && <p className="form-message error-message">{error}</p>}
 
-          <button className="primary-button full-button" type="submit" disabled={saving}>
+          <button
+            className="primary-button full-button"
+            type="submit"
+            disabled={saving || libraries.length === 0}
+          >
             {saving ? "正在保存……" : editingId ? "保存修改" : "添加函数"}
           </button>
         </form>
