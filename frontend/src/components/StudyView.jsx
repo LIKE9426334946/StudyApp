@@ -188,7 +188,6 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
             {!expanded ? (
               <div className="mobile-reveal-hint">
                 点击上方按钮查看详情
-                <span>👇</span>
               </div>
             ) : (
               <div className="mobile-detail-content" id="mobile-function-details">
