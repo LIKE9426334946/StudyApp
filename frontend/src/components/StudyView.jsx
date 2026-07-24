@@ -145,7 +145,7 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
               <button type="button" aria-label="打开函数目录" onClick={showCatalog}>
                 <BackIcon />
               </button>
-              <strong>{current.name}</strong>
+              <strong>{current.library}</strong>
               <button
                 className={`mobile-star-button ${favorites.has(current.id) ? "active" : ""}`}
                 type="button"
@@ -188,6 +188,7 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
             {!expanded ? (
               <div className="mobile-reveal-hint">
                 点击上方按钮查看详情
+                <span>👇</span>
               </div>
             ) : (
               <div className="mobile-detail-content" id="mobile-function-details">
