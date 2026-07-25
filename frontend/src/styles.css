@@ -1842,8 +1842,12 @@ textarea:focus-visible {
   }
 
   .mobile-catalog-header h2 {
+    max-width: 230px;
     margin: 3px 0 0;
+    overflow: hidden;
     font-size: 28px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .mobile-catalog-header button {
@@ -1854,6 +1858,40 @@ textarea:focus-visible {
     background: #e8e4ff;
     cursor: pointer;
     font-weight: 700;
+  }
+
+  .mobile-catalog-title-with-back {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mobile-catalog-title-with-back > div {
+    min-width: 0;
+  }
+
+  .mobile-catalog-header .mobile-catalog-back {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    place-items: center;
+    padding: 0;
+    border: 1px solid #e2e0e9;
+    border-radius: 50%;
+    color: #5542d1;
+    background: #fff;
+  }
+
+  .mobile-catalog-back svg {
+    width: 23px;
+    height: 23px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
   }
 
   .mobile-catalog-search {
@@ -1877,6 +1915,10 @@ textarea:focus-visible {
     border: 0;
     outline: 0;
     background: transparent;
+  }
+
+  .mobile-catalog-search + .mobile-catalog-list {
+    margin-top: 14px;
   }
 
   .mobile-catalog-tabs {
@@ -1911,6 +1953,14 @@ textarea:focus-visible {
   .mobile-catalog-list {
     display: grid;
     gap: 9px;
+  }
+
+  .mobile-catalog-empty {
+    margin: 28px 8px;
+    color: #88858f;
+    font-size: 13px;
+    line-height: 1.7;
+    text-align: center;
   }
 
   .mobile-catalog-list > button {
