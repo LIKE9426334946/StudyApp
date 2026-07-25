@@ -374,7 +374,6 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
                   value={catalogQuery}
                   onChange={(event) => setCatalogQuery(event.target.value)}
                   placeholder="搜索函数库名称"
-                  autoFocus
                 />
               </label>
             )}
