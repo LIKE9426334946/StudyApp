@@ -46,19 +46,24 @@ function CodeIcon() {
 function StudyView({ functions, favorites, onToggleFavorite }) {
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
-  const [query, setQuery] = useState("");
+  const [functionQuery, setFunctionQuery] = useState("");
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogLibrary, setCatalogLibrary] = useState("");
+  const [pendingCatalogFunctionId, setPendingCatalogFunctionId] = useState(null);
   const [library, setLibrary] = useState("全部");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const libraries = useMemo(
-    () => ["全部", ...new Set(functions.map((item) => item.library))],
+  const libraryNames = useMemo(
+    () => [...new Set(functions.map((item) => item.library))],
     [functions],
   );
 
+  const libraries = useMemo(() => ["全部", ...libraryNames], [libraryNames]);
+
   const visibleFunctions = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = functionQuery.trim().toLowerCase();
 
     return functions.filter((item) => {
       const matchesLibrary = library === "全部" || item.library === library;
@@ -70,18 +75,48 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
 
       return matchesLibrary && matchesFavorite && matchesQuery;
     });
-  }, [favorites, favoritesOnly, functions, library, query]);
+  }, [favorites, favoritesOnly, functionQuery, functions, library]);
+
+  const catalogLibraries = useMemo(() => {
+    const normalizedQuery = catalogQuery.trim().toLowerCase();
+
+    return libraryNames
+      .filter((name) => name.toLowerCase().includes(normalizedQuery))
+      .map((name) => ({
+        name,
+        count: functions.filter((item) => item.library === name).length,
+      }));
+  }, [catalogQuery, functions, libraryNames]);
+
+  const catalogFunctions = useMemo(
+    () => functions.filter((item) => item.library === catalogLibrary),
+    [catalogLibrary, functions],
+  );
 
   useEffect(() => {
     setIndex(0);
     setExpanded(false);
-  }, [library, query, favoritesOnly]);
+  }, [favoritesOnly, functionQuery, library]);
 
   useEffect(() => {
     if (index >= visibleFunctions.length) {
       setIndex(Math.max(visibleFunctions.length - 1, 0));
     }
   }, [index, visibleFunctions.length]);
+
+  useEffect(() => {
+    if (pendingCatalogFunctionId === null) return;
+
+    const selectedIndex = visibleFunctions.findIndex(
+      (item) => item.id === pendingCatalogFunctionId,
+    );
+
+    if (selectedIndex >= 0) {
+      setIndex(selectedIndex);
+    }
+
+    setPendingCatalogFunctionId(null);
+  }, [pendingCatalogFunctionId, visibleFunctions]);
 
   const current = visibleFunctions[index];
 
@@ -101,6 +136,8 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
 
   function showCatalog() {
     setFavoritesOnly(false);
+    setCatalogQuery("");
+    setCatalogLibrary("");
     setCatalogOpen(true);
   }
 
@@ -114,11 +151,14 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
     setFavoritesOnly(false);
   }
 
-  function selectFunction(id) {
-    const selectedIndex = visibleFunctions.findIndex((item) => item.id === id);
+  function selectCatalogFunction(id) {
+    const functionExists = catalogFunctions.some((item) => item.id === id);
 
-    if (selectedIndex >= 0) {
-      setIndex(selectedIndex);
+    if (functionExists) {
+      setPendingCatalogFunctionId(id);
+      setLibrary(catalogLibrary);
+      setFunctionQuery("");
+      setFavoritesOnly(false);
       setExpanded(false);
       setCatalogOpen(false);
     }
@@ -300,55 +340,91 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
         {catalogOpen && (
           <div className="mobile-catalog" role="dialog" aria-modal="true">
             <div className="mobile-catalog-header">
-              <div>
-                <span>FUNCTION CATALOG</span>
-                <h2>函数目录</h2>
-              </div>
+              {catalogLibrary ? (
+                <div className="mobile-catalog-title-with-back">
+                  <button
+                    className="mobile-catalog-back"
+                    type="button"
+                    aria-label="返回函数库目录"
+                    onClick={() => setCatalogLibrary("")}
+                  >
+                    <BackIcon />
+                  </button>
+                  <div>
+                    <span>FUNCTION LIBRARY</span>
+                    <h2>{catalogLibrary}</h2>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <span>FUNCTION LIBRARIES</span>
+                  <h2>函数库目录</h2>
+                </div>
+              )}
               <button type="button" onClick={() => setCatalogOpen(false)}>
                 完成
               </button>
             </div>
 
-            <label className="mobile-catalog-search">
-              <span>⌕</span>
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索函数名称"
-                autoFocus
-              />
-            </label>
-
-            <div className="mobile-catalog-tabs">
-              {libraries.map((item) => (
-                <button
-                  className={library === item ? "active" : ""}
-                  type="button"
-                  key={item}
-                  onClick={() => setLibrary(item)}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
+            {!catalogLibrary && (
+              <label className="mobile-catalog-search">
+                <span>⌕</span>
+                <input
+                  type="search"
+                  value={catalogQuery}
+                  onChange={(event) => setCatalogQuery(event.target.value)}
+                  placeholder="搜索函数库名称"
+                  autoFocus
+                />
+              </label>
+            )}
 
             <div className="mobile-catalog-list">
-              {visibleFunctions.map((item, itemIndex) => (
-                <button
-                  className={current?.id === item.id ? "active" : ""}
-                  type="button"
-                  key={item.id}
-                  onClick={() => selectFunction(item.id)}
-                >
-                  <span>{String(itemIndex + 1).padStart(2, "0")}</span>
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>{item.library}</small>
-                  </span>
-                  <span>›</span>
-                </button>
-              ))}
+              {!catalogLibrary &&
+                catalogLibraries.map((item, itemIndex) => (
+                  <button
+                    className={current?.library === item.name ? "active" : ""}
+                    type="button"
+                    key={item.name}
+                    onClick={() => setCatalogLibrary(item.name)}
+                  >
+                    <span>{String(itemIndex + 1).padStart(2, "0")}</span>
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>{item.count} 个函数</small>
+                    </span>
+                    <span>›</span>
+                  </button>
+                ))}
+
+              {!catalogLibrary && catalogLibraries.length === 0 && (
+                <p className="mobile-catalog-empty">
+                  没有找到名称包含“{catalogQuery.trim()}”的函数库。
+                </p>
+              )}
+
+              {catalogLibrary &&
+                catalogFunctions.map((item, itemIndex) => (
+                  <button
+                    className={current?.id === item.id ? "active" : ""}
+                    type="button"
+                    key={item.id}
+                    onClick={() => selectCatalogFunction(item.id)}
+                  >
+                    <span>{String(itemIndex + 1).padStart(2, "0")}</span>
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>{item.library}</small>
+                    </span>
+                    <span>›</span>
+                  </button>
+                ))}
+
+              {catalogLibrary && catalogFunctions.length === 0 && (
+                <p className="mobile-catalog-empty">
+                  这个函数库中还没有函数。
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -366,8 +442,8 @@ function StudyView({ functions, favorites, onToggleFavorite }) {
             <span>⌕</span>
             <input
               type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              value={functionQuery}
+              onChange={(event) => setFunctionQuery(event.target.value)}
               placeholder="搜索函数名称"
             />
           </label>
