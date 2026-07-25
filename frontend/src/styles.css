@@ -1694,6 +1694,7 @@ textarea:focus-visible {
     margin: 0;
     padding: 17px 16px;
     overflow-x: auto;
+    overflow-y: hidden;
     border: 1px solid #e3e3ec;
     border-radius: 11px;
     color: #2f257d;
@@ -1701,7 +1702,8 @@ textarea:focus-visible {
     font-family: "SFMono-Regular", Consolas, monospace;
     font-size: 12px;
     line-height: 1.75;
-    white-space: pre-wrap;
+    white-space: pre;
+    -webkit-overflow-scrolling: touch;
   }
 
   .mobile-result-box {
