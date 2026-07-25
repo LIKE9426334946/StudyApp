@@ -1658,16 +1658,6 @@ textarea:focus-visible {
     white-space: pre-wrap;
   }
 
-  .mobile-parameter-text {
-    padding-left: 17px;
-  }
-
-  .mobile-parameter-text::before {
-    margin-left: -15px;
-    margin-right: 8px;
-    content: "•";
-  }
-
   .mobile-section-heading {
     display: flex;
     align-items: center;
