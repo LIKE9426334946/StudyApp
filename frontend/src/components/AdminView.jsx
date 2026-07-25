@@ -36,36 +36,24 @@ function AdminView({ functions, onRefresh }) {
   const [librarySaving, setLibrarySaving] = useState(false);
   const [libraryMessage, setLibraryMessage] = useState("");
   const [libraryError, setLibraryError] = useState("");
+  const [listLibrary, setListLibrary] = useState("");
   const [functionQuery, setFunctionQuery] = useState("");
   const importInputRef = useRef(null);
 
-  const groupedFunctions = useMemo(() => {
-    const normalizedQuery = functionQuery.trim().toLocaleLowerCase();
-    const groups = new Map(libraries.map((name) => [name, []]));
-
-    functions
-      .filter(
-        (item) =>
-          !normalizedQuery ||
-          String(item.name).toLocaleLowerCase().includes(normalizedQuery),
-      )
-      .forEach((item) => {
-        if (!groups.has(item.library)) {
-          groups.set(item.library, []);
-        }
-
-        groups.get(item.library).push(item);
-      });
-
-    return Array.from(groups, ([name, items]) => ({ name, items })).filter(
-      (group) => group.items.length > 0,
-    );
-  }, [functionQuery, functions, libraries]);
-
-  const visibleFunctionCount = groupedFunctions.reduce(
-    (count, group) => count + group.items.length,
-    0,
+  const selectedLibraryFunctions = useMemo(
+    () => functions.filter((item) => item.library === listLibrary),
+    [functions, listLibrary],
   );
+
+  const visibleFunctions = useMemo(() => {
+    const normalizedQuery = functionQuery.trim().toLocaleLowerCase();
+
+    return selectedLibraryFunctions.filter(
+      (item) =>
+        !normalizedQuery ||
+        String(item.name).toLocaleLowerCase().includes(normalizedQuery),
+    );
+  }, [functionQuery, selectedLibraryFunctions]);
 
   const loadLibraries = useCallback(async () => {
     setLibraryError("");
@@ -89,9 +77,20 @@ function AdminView({ functions, onRefresh }) {
     loadLibraries();
   }, [loadLibraries]);
 
+  useEffect(() => {
+    setListLibrary((current) =>
+      current && libraries.includes(current) ? current : libraries[0] || "",
+    );
+  }, [libraries]);
+
   function updateField(event) {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function changeListLibrary(event) {
+    setListLibrary(event.target.value);
+    setFunctionQuery("");
   }
 
   function resetForm() {
@@ -534,6 +533,24 @@ function AdminView({ functions, onRefresh }) {
               <h2>已有函数</h2>
             </div>
             <div className="function-list-tools">
+              <label className="function-library-filter">
+                <span aria-hidden="true">▦</span>
+                <select
+                  value={listLibrary}
+                  onChange={changeListLibrary}
+                  disabled={libraries.length === 0}
+                  aria-label="选择要查看的函数库"
+                >
+                  <option value="" disabled>
+                    选择函数库
+                  </option>
+                  {libraries.map((name) => (
+                    <option value={name} key={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="function-list-search">
                 <span aria-hidden="true">⌕</span>
                 <input
@@ -553,50 +570,54 @@ function AdminView({ functions, onRefresh }) {
           <div className="admin-function-list">
             {functions.length === 0 ? (
               <div className="empty-list">还没有函数，请先添加一个。</div>
-            ) : groupedFunctions.length === 0 ? (
+            ) : !listLibrary ? (
+              <div className="empty-list">请先选择要查看的函数库。</div>
+            ) : selectedLibraryFunctions.length === 0 ? (
               <div className="empty-list">
-                没有找到名称包含“{functionQuery.trim()}”的函数。
+                “{listLibrary}”中还没有函数。
+              </div>
+            ) : visibleFunctions.length === 0 ? (
+              <div className="empty-list">
+                “{listLibrary}”中没有找到名称包含“{functionQuery.trim()}”的函数。
               </div>
             ) : (
               <>
                 <p className="function-list-summary">
                   {functionQuery.trim()
-                    ? `找到 ${visibleFunctionCount} 个函数`
-                    : `共 ${visibleFunctionCount} 个函数，按函数库显示`}
+                    ? `在“${listLibrary}”中找到 ${visibleFunctions.length} 个函数`
+                    : `“${listLibrary}”共有 ${visibleFunctions.length} 个函数`}
                 </p>
-                {groupedFunctions.map((group) => (
-                  <section className="function-library-group" key={group.name}>
-                    <div className="function-library-heading">
-                      <h3>{group.name}</h3>
-                      <span>{group.items.length} 个函数</span>
-                    </div>
-                    <div className="function-library-items">
-                      {group.items.map((item) => (
-                        <article className="admin-function-item" key={item.id}>
-                          <div className="item-index">
-                            {String(item.id).padStart(2, "0")}
-                          </div>
-                          <div className="item-content">
-                            <h3>{item.name}</h3>
-                            <p>{item.description}</p>
-                          </div>
-                          <div className="item-actions">
-                            <button type="button" onClick={() => beginEdit(item)}>
-                              修改
-                            </button>
-                            <button
-                              className="danger-button"
-                              type="button"
-                              onClick={() => handleDelete(item)}
-                            >
-                              删除
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  </section>
-                ))}
+                <section className="function-library-group">
+                  <div className="function-library-heading">
+                    <h3>{listLibrary}</h3>
+                    <span>{visibleFunctions.length} 个函数</span>
+                  </div>
+                  <div className="function-library-items">
+                    {visibleFunctions.map((item) => (
+                      <article className="admin-function-item" key={item.id}>
+                        <div className="item-index">
+                          {String(item.id).padStart(2, "0")}
+                        </div>
+                        <div className="item-content">
+                          <h3>{item.name}</h3>
+                          <p>{item.description}</p>
+                        </div>
+                        <div className="item-actions">
+                          <button type="button" onClick={() => beginEdit(item)}>
+                            修改
+                          </button>
+                          <button
+                            className="danger-button"
+                            type="button"
+                            onClick={() => handleDelete(item)}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
               </>
             )}
           </div>
