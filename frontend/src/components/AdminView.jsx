@@ -113,7 +113,6 @@ function AdminView({ functions, onRefresh }) {
     });
     setMessage("");
     setError("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleSubmit(event) {
