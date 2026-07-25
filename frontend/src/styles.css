@@ -1635,6 +1635,8 @@ textarea:focus-visible {
     color: #292934;
     font-size: 14px;
     line-height: 1.85;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 
   .mobile-detail-section h3 {
