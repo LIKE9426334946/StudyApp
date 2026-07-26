@@ -89,6 +89,13 @@ export function createLibrary(name) {
   });
 }
 
+export function updateLibraryOrder(libraries) {
+  return requestFrom(LIBRARIES_ENDPOINT, "/order", {
+    method: "PUT",
+    body: JSON.stringify({ libraries }),
+  });
+}
+
 export function deleteLibrary(name) {
   return requestFrom(LIBRARIES_ENDPOINT, `/${encodeURIComponent(name)}`, {
     method: "DELETE",
