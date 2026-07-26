@@ -1,12 +1,21 @@
 const express = require("express");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 
 const DEFAULT_DATA_FILE = path.join(__dirname, "../data/functions.json");
 const DEFAULT_LIBRARIES_FILE = path.join(__dirname, "../data/libraries.json");
+const DEFAULT_SESSIONS_FILE = path.join(
+  __dirname,
+  "../data/admin-sessions.json",
+);
 const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
 const MAX_JSON_FILE_SIZE = 50 * 1024 * 1024;
+const ADMIN_USERNAME = "noart";
+const ADMIN_PASSWORD = "Suki-is-a-dummy";
+const SESSION_COOKIE_NAME = "studyapp_admin_session";
+const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function normalizeText(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -163,10 +172,109 @@ function findLibrary(libraries, requestedName) {
   return libraries.find((name) => name.toLocaleLowerCase() === key);
 }
 
+function hashValue(value) {
+  return crypto.createHash("sha256").update(String(value)).digest();
+}
+
+function safeEqual(value, expected) {
+  return crypto.timingSafeEqual(hashValue(value), hashValue(expected));
+}
+
+function parseCookies(cookieHeader = "") {
+  return cookieHeader.split(";").reduce((cookies, part) => {
+    const separatorIndex = part.indexOf("=");
+
+    if (separatorIndex === -1) {
+      return cookies;
+    }
+
+    const name = part.slice(0, separatorIndex).trim();
+    const value = part.slice(separatorIndex + 1).trim();
+
+    if (!name) {
+      return cookies;
+    }
+
+    try {
+      cookies[name] = decodeURIComponent(value);
+    } catch {
+      cookies[name] = value;
+    }
+
+    return cookies;
+  }, {});
+}
+
+function getSessionToken(req) {
+  return parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME] || "";
+}
+
+function hashSessionToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+async function readSessions(sessionsFile) {
+  try {
+    const content = await fsp.readFile(sessionsFile, "utf8");
+    const sessions = JSON.parse(content);
+
+    if (!Array.isArray(sessions)) {
+      throw new Error("admin-sessions.json 的顶层数据必须是数组");
+    }
+
+    return sessions;
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function writeSessions(sessionsFile, sessions) {
+  const tempFile = `${sessionsFile}.tmp`;
+  await fsp.mkdir(path.dirname(sessionsFile), { recursive: true });
+  await fsp.writeFile(
+    tempFile,
+    `${JSON.stringify(sessions, null, 2)}\n`,
+    "utf8",
+  );
+  await fsp.rename(tempFile, sessionsFile);
+}
+
+function activeSessions(sessions, now = Date.now()) {
+  return sessions.filter(
+    (session) =>
+      typeof session?.tokenHash === "string" &&
+      Number.isFinite(Date.parse(session.expiresAt)) &&
+      Date.parse(session.expiresAt) > now,
+  );
+}
+
+function sessionCookie(token, req, maxAgeSeconds) {
+  const attributes = [
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Strict",
+    `Max-Age=${maxAgeSeconds}`,
+  ];
+  const forwardedProtocol = req.get("x-forwarded-proto");
+
+  if (req.secure || forwardedProtocol === "https") {
+    attributes.push("Secure");
+  }
+
+  return attributes.join("; ");
+}
+
 function createApp(options = {}) {
   const dataFile = options.dataFile || process.env.DATA_FILE || DEFAULT_DATA_FILE;
   const librariesFile =
     options.librariesFile || process.env.LIBRARIES_FILE || DEFAULT_LIBRARIES_FILE;
+  const sessionsFile =
+    options.sessionsFile || process.env.SESSIONS_FILE || DEFAULT_SESSIONS_FILE;
   const app = express();
 
   app.disable("x-powered-by");
@@ -180,6 +288,130 @@ function createApp(options = {}) {
     });
   });
 
+  app.post("/api/auth/login", async (req, res, next) => {
+    try {
+      res.set("Cache-Control", "no-store");
+      const username = normalizeText(req.body?.username);
+      const password =
+        typeof req.body?.password === "string" ? req.body.password : "";
+
+      if (
+        !safeEqual(username, ADMIN_USERNAME) ||
+        !safeEqual(password, ADMIN_PASSWORD)
+      ) {
+        return res.status(401).json({ message: "用户名或密码错误" });
+      }
+
+      const now = Date.now();
+      const token = crypto.randomBytes(32).toString("base64url");
+      const expiresAt = new Date(now + SESSION_DURATION_MS).toISOString();
+      const sessions = activeSessions(await readSessions(sessionsFile), now);
+
+      sessions.push({
+        tokenHash: hashSessionToken(token),
+        expiresAt,
+      });
+      await writeSessions(sessionsFile, sessions);
+
+      res.set(
+        "Set-Cookie",
+        sessionCookie(token, req, SESSION_DURATION_MS / 1000),
+      );
+      return res.json({
+        authenticated: true,
+        username: ADMIN_USERNAME,
+        expiresAt,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get("/api/auth/session", async (req, res, next) => {
+    try {
+      res.set("Cache-Control", "no-store");
+      const token = getSessionToken(req);
+
+      if (!token) {
+        return res.status(401).json({ message: "请先登录管理账号" });
+      }
+
+      const now = Date.now();
+      const sessions = await readSessions(sessionsFile);
+      const currentTokenHash = hashSessionToken(token);
+      const session = sessions.find(
+        (item) =>
+          item.tokenHash === currentTokenHash &&
+          Date.parse(item.expiresAt) > now,
+      );
+      const currentSessions = activeSessions(sessions, now);
+
+      if (currentSessions.length !== sessions.length) {
+        await writeSessions(sessionsFile, currentSessions);
+      }
+
+      if (!session) {
+        res.set("Set-Cookie", sessionCookie("", req, 0));
+        return res.status(401).json({ message: "登录已过期，请重新登录" });
+      }
+
+      return res.json({
+        authenticated: true,
+        username: ADMIN_USERNAME,
+        expiresAt: session.expiresAt,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post("/api/auth/logout", async (req, res, next) => {
+    try {
+      res.set("Cache-Control", "no-store");
+      const token = getSessionToken(req);
+      const currentTokenHash = token ? hashSessionToken(token) : "";
+      const sessions = activeSessions(await readSessions(sessionsFile)).filter(
+        (session) => session.tokenHash !== currentTokenHash,
+      );
+
+      await writeSessions(sessionsFile, sessions);
+      res.set("Set-Cookie", sessionCookie("", req, 0));
+      return res.status(204).end();
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  async function requireAdmin(req, res, next) {
+    try {
+      const token = getSessionToken(req);
+
+      if (!token) {
+        return res.status(401).json({ message: "请先登录管理账号" });
+      }
+
+      const now = Date.now();
+      const sessions = await readSessions(sessionsFile);
+      const currentSessions = activeSessions(sessions, now);
+      const authenticated = currentSessions.some(
+        (session) => session.tokenHash === hashSessionToken(token),
+      );
+
+      if (currentSessions.length !== sessions.length) {
+        await writeSessions(sessionsFile, currentSessions);
+      }
+
+      if (!authenticated) {
+        res.set("Set-Cookie", sessionCookie("", req, 0));
+        return res.status(401).json({ message: "登录已过期，请重新登录" });
+      }
+
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   app.get("/api/functions", async (req, res, next) => {
     try {
       const functions = await readFunctions(dataFile);
@@ -189,7 +421,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.get("/api/functions/export", async (req, res, next) => {
+  app.get("/api/functions/export", requireAdmin, async (req, res, next) => {
     try {
       const functions = await readFunctions(dataFile);
       const content = `${JSON.stringify(functions, null, 2)}\n`;
@@ -208,7 +440,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.post("/api/functions/import", async (req, res, next) => {
+  app.post("/api/functions/import", requireAdmin, async (req, res, next) => {
     try {
       const mode = normalizeText(req.query.mode) || "replace";
 
@@ -255,7 +487,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.post("/api/functions", async (req, res, next) => {
+  app.post("/api/functions", requireAdmin, async (req, res, next) => {
     try {
       const item = normalizeFunction(req.body);
       const missing = validateFunction(item);
@@ -290,7 +522,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.put("/api/functions/:id", async (req, res, next) => {
+  app.put("/api/functions/:id", requireAdmin, async (req, res, next) => {
     try {
       const id = Number(req.params.id);
 
@@ -334,7 +566,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.delete("/api/functions/:id", async (req, res, next) => {
+  app.delete("/api/functions/:id", requireAdmin, async (req, res, next) => {
     try {
       const id = Number(req.params.id);
 
@@ -365,7 +597,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.post("/api/libraries", async (req, res, next) => {
+  app.post("/api/libraries", requireAdmin, async (req, res, next) => {
     try {
       const name = normalizeText(req.body?.name);
 
@@ -391,7 +623,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.delete("/api/libraries/:name", async (req, res, next) => {
+  app.delete("/api/libraries/:name", requireAdmin, async (req, res, next) => {
     try {
       const libraries = await readLibraries(librariesFile, dataFile);
       const library = findLibrary(libraries, req.params.name);
