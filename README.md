@@ -54,7 +54,7 @@ npm run setup
 打开第一个终端，启动后端：
 
 ```bash
-npm run dev --prefix backend
+STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm run dev --prefix backend
 ```
 
 后端地址：
@@ -96,7 +96,7 @@ npm run build
 然后启动后端：
 
 ```bash
-npm start
+STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm start
 ```
 
 构建完成后，Express 会同时提供 API 和前端静态页面，因此只需要启动一个
@@ -109,7 +109,7 @@ http://127.0.0.1:3000
 可通过环境变量修改监听地址和端口：
 
 ```bash
-HOST=127.0.0.1 PORT=3000 npm start
+HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm start
 ```
 
 ## API
@@ -129,12 +129,14 @@ HOST=127.0.0.1 PORT=3000 npm start
 | `DELETE` | `/api/functions/:id` | 登录后删除函数 |
 | `GET` | `/api/libraries` | 获取函数库列表 |
 | `POST` | `/api/libraries` | 登录后新增函数库 |
+| `PUT` | `/api/libraries/order` | 登录后保存函数库顺序 |
 | `DELETE` | `/api/libraries/:name` | 登录后删除空函数库 |
 
 管理界面只支持项目内置的一个固定账号，不提供注册或创建账号功能。登录成功后，
 服务器通过 `HttpOnly` Cookie 保存会话，有效期为 30 天。会话数据会自动写入
 `backend/data/admin-sessions.json`；该运行时文件已加入 `.gitignore`，不会提交
-到 Git 仓库。
+到 Git 仓库。用户名默认为 `noart`，管理密码必须通过
+`STUDYAPP_ADMIN_PASSWORD` 环境变量提供，不会写入源码或 Git 历史。
 
 管理页面中的“导出 functions.json”可以下载当前数据备份。导入时可以选择
 “新增到现有数据”或“覆盖现有数据”：新增模式会保留原有函数并为导入函数
@@ -142,10 +144,11 @@ HOST=127.0.0.1 PORT=3000 npm start
 格式并要求确认。导入文件必须是 JSON 数组，导入和导出的单个
 `functions.json` 文件最大为 50MB。
 
-函数库在管理页面中单独新增和删除。添加或修改函数时必须由用户从已有函数库
-中选择，新增函数后会保留本次选择，不会自动切换到其他库。仍然包含函数的
-函数库不能删除，需要先修改这些函数的所属库或删除函数。导入
-`functions.json` 时，文件中出现的新函数库会自动加入库列表。
+函数库在管理页面中单独新增、删除和排序。添加或修改函数时必须由用户从已有
+函数库中选择，新增函数后会保留本次选择，不会自动切换到其他库。仍然包含
+函数的函数库不能删除，需要先修改这些函数的所属库或删除函数。导入
+`functions.json` 时，文件中出现的新函数库会自动加入库列表。排序结果保存在
+`backend/data/libraries.json`。
 
 ## 部署到现有 Nginx
 
@@ -184,6 +187,7 @@ WorkingDirectory=/opt/StudyApp
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=PORT=3000
+Environment=STUDYAPP_ADMIN_PASSWORD=请替换为管理密码
 ExecStart=/usr/bin/npm start
 Restart=on-failure
 RestartSec=3
