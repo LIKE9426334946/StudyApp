@@ -5,10 +5,11 @@ const path = require("node:path");
 const test = require("node:test");
 const { createApp } = require("../src/app");
 
-test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
+test("管理 API 需要登录，并可完成函数库、函数和导入导出操作", async (t) => {
   const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "study-app-"));
   const dataFile = path.join(tempDirectory, "functions.json");
   const librariesFile = path.join(tempDirectory, "libraries.json");
+  const sessionsFile = path.join(tempDirectory, "admin-sessions.json");
 
   await fs.writeFile(
     dataFile,
@@ -27,7 +28,10 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
   );
   await fs.writeFile(librariesFile, JSON.stringify(["JavaScript"]), "utf8");
 
-  const server = createApp({ dataFile, librariesFile }).listen(0, "127.0.0.1");
+  const server = createApp({ dataFile, librariesFile, sessionsFile }).listen(
+    0,
+    "127.0.0.1",
+  );
   await new Promise((resolve) => server.once("listening", resolve));
 
   const address = server.address();
@@ -48,41 +52,105 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
   assert.equal(librariesResponse.status, 200);
   assert.deepEqual(await librariesResponse.json(), ["JavaScript"]);
 
-  const unknownLibraryResponse = await fetch(`${baseUrl}/api/functions`, {
+  const unauthorizedCreateResponse = await fetch(`${baseUrl}/api/functions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(unauthorizedCreateResponse.status, 401);
+
+  const unauthorizedExportResponse = await fetch(
+    `${baseUrl}/api/functions/export`,
+  );
+  assert.equal(unauthorizedExportResponse.status, 401);
+
+  const wrongLoginResponse = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      library: "不存在",
-      name: "unknown()",
-      description: "测试不存在的函数库",
-      code: "unknown()",
+      username: "noart",
+      password: "wrong-password",
     }),
   });
-  assert.equal(unknownLibraryResponse.status, 400);
+  assert.equal(wrongLoginResponse.status, 401);
 
-  const createLibraryResponse = await fetch(`${baseUrl}/api/libraries`, {
+  const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Python" }),
+    body: JSON.stringify({
+      username: "noart",
+      password: "Suki-is-a-dummy",
+    }),
   });
+  assert.equal(loginResponse.status, 200);
+  assert.equal((await loginResponse.json()).authenticated, true);
+
+  const setCookie = loginResponse.headers.get("set-cookie");
+  assert.match(setCookie, /studyapp_admin_session=/);
+  assert.match(setCookie, /HttpOnly/i);
+  assert.match(setCookie, /SameSite=Strict/i);
+  assert.match(setCookie, /Max-Age=2592000/i);
+  const sessionCookie = setCookie.split(";")[0];
+
+  function authenticatedFetch(url, options = {}) {
+    const headers = new Headers(options.headers);
+    headers.set("Cookie", sessionCookie);
+    return fetch(url, { ...options, headers });
+  }
+
+  const sessionResponse = await authenticatedFetch(
+    `${baseUrl}/api/auth/session`,
+  );
+  assert.equal(sessionResponse.status, 200);
+  assert.equal((await sessionResponse.json()).username, "noart");
+
+  const unknownLibraryResponse = await authenticatedFetch(
+    `${baseUrl}/api/functions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        library: "不存在",
+        name: "unknown()",
+        description: "测试不存在的函数库",
+        code: "unknown()",
+      }),
+    },
+  );
+  assert.equal(unknownLibraryResponse.status, 400);
+
+  const createLibraryResponse = await authenticatedFetch(
+    `${baseUrl}/api/libraries`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Python" }),
+    },
+  );
   assert.equal(createLibraryResponse.status, 201);
   assert.deepEqual(await createLibraryResponse.json(), { name: "Python" });
 
-  const duplicateLibraryResponse = await fetch(`${baseUrl}/api/libraries`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "python" }),
-  });
+  const duplicateLibraryResponse = await authenticatedFetch(
+    `${baseUrl}/api/libraries`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "python" }),
+    },
+  );
   assert.equal(duplicateLibraryResponse.status, 409);
 
-  const createEmptyLibraryResponse = await fetch(`${baseUrl}/api/libraries`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Rust" }),
-  });
+  const createEmptyLibraryResponse = await authenticatedFetch(
+    `${baseUrl}/api/libraries`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Rust" }),
+    },
+  );
   assert.equal(createEmptyLibraryResponse.status, 201);
 
-  const deleteEmptyLibraryResponse = await fetch(
+  const deleteEmptyLibraryResponse = await authenticatedFetch(
     `${baseUrl}/api/libraries/${encodeURIComponent("Rust")}`,
     { method: "DELETE" },
   );
@@ -92,7 +160,7 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
   assert.equal(pageResponse.status, 200);
   assert.match(await pageResponse.text(), /<div id="root"><\/div>/);
 
-  const createResponse = await fetch(`${baseUrl}/api/functions`, {
+  const createResponse = await authenticatedFetch(`${baseUrl}/api/functions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -108,7 +176,7 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
   const created = await createResponse.json();
   assert.equal(created.id, 2);
 
-  const updateResponse = await fetch(`${baseUrl}/api/functions/2`, {
+  const updateResponse = await authenticatedFetch(`${baseUrl}/api/functions/2`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -119,7 +187,7 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
   assert.equal(updateResponse.status, 200);
   assert.equal((await updateResponse.json()).description, "返回容器中的项目数量");
 
-  const deleteResponse = await fetch(`${baseUrl}/api/functions/1`, {
+  const deleteResponse = await authenticatedFetch(`${baseUrl}/api/functions/1`, {
     method: "DELETE",
   });
   assert.equal(deleteResponse.status, 204);
@@ -128,7 +196,9 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
   const finalItems = await finalResponse.json();
   assert.deepEqual(finalItems.map((item) => item.id), [2]);
 
-  const exportResponse = await fetch(`${baseUrl}/api/functions/export`);
+  const exportResponse = await authenticatedFetch(
+    `${baseUrl}/api/functions/export`,
+  );
   assert.equal(exportResponse.status, 200);
   assert.match(
     exportResponse.headers.get("content-disposition"),
@@ -139,11 +209,14 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
     [2],
   );
 
-  const invalidImportResponse = await fetch(`${baseUrl}/api/functions/import`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ functions: [] }),
-  });
+  const invalidImportResponse = await authenticatedFetch(
+    `${baseUrl}/api/functions/import`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ functions: [] }),
+    },
+  );
   assert.equal(invalidImportResponse.status, 400);
   assert.match(
     (await invalidImportResponse.json()).message,
@@ -156,7 +229,7 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
     [2],
   );
 
-  const invalidModeResponse = await fetch(
+  const invalidModeResponse = await authenticatedFetch(
     `${baseUrl}/api/functions/import?mode=invalid`,
     {
       method: "POST",
@@ -166,7 +239,7 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
   );
   assert.equal(invalidModeResponse.status, 400);
 
-  const appendImportResponse = await fetch(
+  const appendImportResponse = await authenticatedFetch(
     `${baseUrl}/api/functions/import?mode=append`,
     {
       method: "POST",
@@ -194,31 +267,31 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
     [2, 3],
   );
 
-  const importResponse = await fetch(
+  const importResponse = await authenticatedFetch(
     `${baseUrl}/api/functions/import?mode=replace`,
     {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify([
-      {
-        id: 7,
-        library: "Python",
-        name: "len()",
-        description: "返回对象长度",
-        parameters: "object",
-        code: "len([1, 2, 3])",
-        result: "3",
-      },
-      {
-        id: 7,
-        library: "NumPy",
-        name: "numpy.mean()",
-        description: "计算平均值",
-        parameters: "array",
-        code: "np.mean([1, 2, 3])",
-        result: "2.0",
-      },
-    ]),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([
+        {
+          id: 7,
+          library: "Python",
+          name: "len()",
+          description: "返回对象长度",
+          parameters: "object",
+          code: "len([1, 2, 3])",
+          result: "3",
+        },
+        {
+          id: 7,
+          library: "NumPy",
+          name: "numpy.mean()",
+          description: "计算平均值",
+          parameters: "array",
+          code: "np.mean([1, 2, 3])",
+          result: "2.0",
+        },
+      ]),
     },
   );
   assert.equal(importResponse.status, 200);
@@ -245,7 +318,7 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
     "NumPy",
   ]);
 
-  const deleteUsedLibraryResponse = await fetch(
+  const deleteUsedLibraryResponse = await authenticatedFetch(
     `${baseUrl}/api/libraries/${encodeURIComponent("Python")}`,
     { method: "DELETE" },
   );
@@ -255,14 +328,14 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
     /还有函数/,
   );
 
-  const deleteUnusedLibraryResponse = await fetch(
+  const deleteUnusedLibraryResponse = await authenticatedFetch(
     `${baseUrl}/api/libraries/${encodeURIComponent("JavaScript")}`,
     { method: "DELETE" },
   );
   assert.equal(deleteUnusedLibraryResponse.status, 204);
 
   const largeCode = "x".repeat(1024 * 1024 + 1024);
-  const largeImportResponse = await fetch(
+  const largeImportResponse = await authenticatedFetch(
     `${baseUrl}/api/functions/import?mode=replace`,
     {
       method: "POST",
@@ -282,7 +355,19 @@ test("函数和函数库 API 可以完成管理与导入导出", async (t) => {
   assert.equal(largeImportResponse.status, 200);
   await largeImportResponse.arrayBuffer();
 
-  const largeExportResponse = await fetch(`${baseUrl}/api/functions/export`);
+  const largeExportResponse = await authenticatedFetch(
+    `${baseUrl}/api/functions/export`,
+  );
   assert.equal(largeExportResponse.status, 200);
   assert.ok((await largeExportResponse.arrayBuffer()).byteLength > 1024 * 1024);
+
+  const logoutResponse = await authenticatedFetch(`${baseUrl}/api/auth/logout`, {
+    method: "POST",
+  });
+  assert.equal(logoutResponse.status, 204);
+
+  const expiredSessionResponse = await authenticatedFetch(
+    `${baseUrl}/api/auth/session`,
+  );
+  assert.equal(expiredSessionResponse.status, 401);
 });
