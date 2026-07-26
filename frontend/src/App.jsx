@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { getFunctions } from "./api";
+import {
+  getAdminSession,
+  getFunctions,
+  logoutAdmin,
+} from "./api";
 import AdminView from "./components/AdminView";
+import AdminLogin from "./components/AdminLogin";
 import StudyView from "./components/StudyView";
 import { loadFavorites, saveFavorites } from "./storage";
+import "./login.css";
 
 function App() {
   const [mode, setMode] = useState("study");
@@ -10,6 +16,8 @@ function App() {
   const [favorites, setFavorites] = useState(() => loadFavorites());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [authLoading, setAuthLoading] = useState(true);
+  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
 
   const loadData = useCallback(async () => {
     setError("");
@@ -27,6 +35,41 @@ function App() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    let active = true;
+
+    getAdminSession()
+      .then(() => {
+        if (active) setAdminAuthenticated(true);
+      })
+      .catch(() => {
+        if (active) setAdminAuthenticated(false);
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false);
+      });
+
+    const handleUnauthorized = () => {
+      setAdminAuthenticated(false);
+      setAuthLoading(false);
+    };
+
+    window.addEventListener("studyapp:unauthorized", handleUnauthorized);
+
+    return () => {
+      active = false;
+      window.removeEventListener("studyapp:unauthorized", handleUnauthorized);
+    };
+  }, []);
+
+  async function handleLogout() {
+    try {
+      await logoutAdmin();
+    } finally {
+      setAdminAuthenticated(false);
+    }
+  }
 
   function toggleFavorite(id) {
     setFavorites((current) => {
@@ -69,6 +112,11 @@ function App() {
           >
             管理
           </button>
+          {mode === "admin" && adminAuthenticated && (
+            <button type="button" onClick={handleLogout}>
+              退出
+            </button>
+          )}
         </nav>
       </header>
 
@@ -92,6 +140,13 @@ function App() {
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
           />
+        ) : authLoading ? (
+          <section className="state-card">
+            <span className="loading-dot" />
+            正在确认登录状态……
+          </section>
+        ) : !adminAuthenticated ? (
+          <AdminLogin onLogin={() => setAdminAuthenticated(true)} />
         ) : (
           <AdminView functions={functions} onRefresh={loadData} />
         )}
