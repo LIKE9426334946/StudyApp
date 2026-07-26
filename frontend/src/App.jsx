@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   getAdminSession,
   getFunctions,
+  getLibraries,
   logoutAdmin,
 } from "./api";
 import AdminView from "./components/AdminView";
@@ -13,6 +14,7 @@ import "./login.css";
 function App() {
   const [mode, setMode] = useState("study");
   const [functions, setFunctions] = useState([]);
+  const [libraries, setLibraries] = useState([]);
   const [favorites, setFavorites] = useState(() => loadFavorites());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -23,8 +25,12 @@ function App() {
     setError("");
 
     try {
-      const data = await getFunctions();
-      setFunctions(data);
+      const [functionData, libraryData] = await Promise.all([
+        getFunctions(),
+        getLibraries(),
+      ]);
+      setFunctions(functionData);
+      setLibraries(libraryData);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -137,6 +143,7 @@ function App() {
         ) : mode === "study" ? (
           <StudyView
             functions={functions}
+            libraries={libraries}
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
           />
