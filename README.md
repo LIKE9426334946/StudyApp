@@ -4,7 +4,7 @@
 一个个人使用的代码函数学习网站 MVP。
 
 - 手机端学习页：查看函数名称、展开解释和代码、切换学习卡片、搜索和筛选、浏览器本地收藏。
-- 电脑端管理页：添加、修改、删除、查看函数，管理函数库，以及导入和导出 JSON 数据。
+- 电脑端管理页：使用固定账号登录后，添加、修改、删除、查看函数，管理函数库，以及导入和导出 JSON 数据。
 - 数据保存：函数位于 `backend/data/functions.json`，函数库位于 `backend/data/libraries.json`。
 - 技术栈：React + Vite、Node.js + Express。
 
@@ -117,16 +117,24 @@ HOST=127.0.0.1 PORT=3000 npm start
 | 方法 | 地址 | 用途 |
 | --- | --- | --- |
 | `GET` | `/api/health` | 健康检查 |
+| `POST` | `/api/auth/login` | 登录固定管理账号 |
+| `GET` | `/api/auth/session` | 检查当前登录状态 |
+| `POST` | `/api/auth/logout` | 退出当前管理账号 |
 | `GET` | `/api/functions` | 获取函数列表 |
-| `GET` | `/api/functions/export` | 下载 `functions.json` |
-| `POST` | `/api/functions/import?mode=append` | 保留现有数据并新增导入 |
-| `POST` | `/api/functions/import?mode=replace` | 覆盖导入全部函数 |
-| `POST` | `/api/functions` | 添加函数 |
-| `PUT` | `/api/functions/:id` | 修改函数 |
-| `DELETE` | `/api/functions/:id` | 删除函数 |
+| `GET` | `/api/functions/export` | 登录后下载 `functions.json` |
+| `POST` | `/api/functions/import?mode=append` | 登录后保留现有数据并新增导入 |
+| `POST` | `/api/functions/import?mode=replace` | 登录后覆盖导入全部函数 |
+| `POST` | `/api/functions` | 登录后添加函数 |
+| `PUT` | `/api/functions/:id` | 登录后修改函数 |
+| `DELETE` | `/api/functions/:id` | 登录后删除函数 |
 | `GET` | `/api/libraries` | 获取函数库列表 |
-| `POST` | `/api/libraries` | 新增函数库 |
-| `DELETE` | `/api/libraries/:name` | 删除空函数库 |
+| `POST` | `/api/libraries` | 登录后新增函数库 |
+| `DELETE` | `/api/libraries/:name` | 登录后删除空函数库 |
+
+管理界面只支持项目内置的一个固定账号，不提供注册或创建账号功能。登录成功后，
+服务器通过 `HttpOnly` Cookie 保存会话，有效期为 30 天。会话数据会自动写入
+`backend/data/admin-sessions.json`；该运行时文件已加入 `.gitignore`，不会提交
+到 Git 仓库。
 
 管理页面中的“导出 functions.json”可以下载当前数据备份。导入时可以选择
 “新增到现有数据”或“覆盖现有数据”：新增模式会保留原有函数并为导入函数
@@ -236,9 +244,6 @@ http://62.234.33.110:16010/blog/
 
 这是第一版 MVP：
 
-- 没有登录和权限系统。
-- 管理接口也没有身份验证。
+- 只有一个固定管理账号，不支持注册、多账号或分级权限。
 - JSON 文件适合个人、低并发使用，不适合多用户同时修改。
 - 收藏只保存在当前浏览器的 `localStorage` 中。
-
-如果直接部署到公网，任何能访问该地址的人都能打开管理页和修改函数数据。增加登录系统之前，建议只在可信网络或个人环境中使用。
