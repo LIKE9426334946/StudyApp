@@ -28,10 +28,13 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   );
   await fs.writeFile(librariesFile, JSON.stringify(["JavaScript"]), "utf8");
 
-  const server = createApp({ dataFile, librariesFile, sessionsFile }).listen(
-    0,
-    "127.0.0.1",
-  );
+  const server = createApp({
+    dataFile,
+    librariesFile,
+    sessionsFile,
+    adminUsername: "noart",
+    adminPassword: "test-admin-password",
+  }).listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
 
   const address = server.address();
@@ -64,6 +67,16 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   );
   assert.equal(unauthorizedExportResponse.status, 401);
 
+  const unauthorizedLibraryOrderResponse = await fetch(
+    `${baseUrl}/api/libraries/order`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ libraries: ["JavaScript"] }),
+    },
+  );
+  assert.equal(unauthorizedLibraryOrderResponse.status, 401);
+
   const wrongLoginResponse = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -79,7 +92,7 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       username: "noart",
-      password: "Suki-is-a-dummy",
+      password: "test-admin-password",
     }),
   });
   assert.equal(loginResponse.status, 200);
@@ -129,6 +142,36 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   );
   assert.equal(createLibraryResponse.status, 201);
   assert.deepEqual(await createLibraryResponse.json(), { name: "Python" });
+
+  const orderLibrariesResponse = await authenticatedFetch(
+    `${baseUrl}/api/libraries/order`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ libraries: ["Python", "JavaScript"] }),
+    },
+  );
+  assert.equal(orderLibrariesResponse.status, 200);
+  assert.deepEqual(await orderLibrariesResponse.json(), [
+    "Python",
+    "JavaScript",
+  ]);
+
+  const invalidLibraryOrderResponse = await authenticatedFetch(
+    `${baseUrl}/api/libraries/order`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ libraries: ["Python"] }),
+    },
+  );
+  assert.equal(invalidLibraryOrderResponse.status, 400);
+
+  const orderedLibrariesResponse = await fetch(`${baseUrl}/api/libraries`);
+  assert.deepEqual(await orderedLibrariesResponse.json(), [
+    "Python",
+    "JavaScript",
+  ]);
 
   const duplicateLibraryResponse = await authenticatedFetch(
     `${baseUrl}/api/libraries`,
@@ -313,8 +356,8 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
 
   const importedLibrariesResponse = await fetch(`${baseUrl}/api/libraries`);
   assert.deepEqual(await importedLibrariesResponse.json(), [
-    "JavaScript",
     "Python",
+    "JavaScript",
     "NumPy",
   ]);
 
