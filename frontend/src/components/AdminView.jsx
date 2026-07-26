@@ -7,6 +7,7 @@ import {
   exportFunctions,
   getLibraries,
   importFunctions,
+  updateLibraryOrder,
   updateFunction,
 } from "../api";
 
@@ -287,6 +288,44 @@ function AdminView({ functions, onRefresh }) {
     }
   }
 
+  async function handleMoveLibrary(name, direction) {
+    const currentIndex = libraries.indexOf(name);
+    const nextIndex = currentIndex + direction;
+
+    if (
+      librarySaving ||
+      currentIndex < 0 ||
+      nextIndex < 0 ||
+      nextIndex >= libraries.length
+    ) {
+      return;
+    }
+
+    const previousLibraries = [...libraries];
+    const nextLibraries = [...libraries];
+    [nextLibraries[currentIndex], nextLibraries[nextIndex]] = [
+      nextLibraries[nextIndex],
+      nextLibraries[currentIndex],
+    ];
+
+    setLibraries(nextLibraries);
+    setLibrarySaving(true);
+    setLibraryMessage("");
+    setLibraryError("");
+
+    try {
+      const savedLibraries = await updateLibraryOrder(nextLibraries);
+      setLibraries(savedLibraries);
+      await onRefresh();
+      setLibraryMessage("函数库顺序已经保存。");
+    } catch (requestError) {
+      setLibraries(previousLibraries);
+      setLibraryError(requestError.message);
+    } finally {
+      setLibrarySaving(false);
+    }
+  }
+
   return (
     <section className="admin-page">
       <div className="admin-heading">
@@ -306,7 +345,7 @@ function AdminView({ functions, onRefresh }) {
           <div>
             <span>FUNCTION LIBRARIES</span>
             <h2>函数库管理</h2>
-            <p>新增函数库后，可以在添加或修改函数时直接选择。</p>
+            <p>可以新增、删除或调整函数库顺序，排序结果会保存在服务器上。</p>
           </div>
 
           <form className="library-create-form" onSubmit={handleCreateLibrary}>
@@ -328,7 +367,7 @@ function AdminView({ functions, onRefresh }) {
           {libraries.length === 0 ? (
             <p>还没有函数库，请先新增一个。</p>
           ) : (
-            libraries.map((name) => {
+            libraries.map((name, libraryIndex) => {
               const functionCount = functions.filter(
                 (item) => item.library === name,
               ).length;
@@ -337,7 +376,30 @@ function AdminView({ functions, onRefresh }) {
                 <div className="library-chip" key={name}>
                   <span>{name}</span>
                   <small>{functionCount} 个函数</small>
+                  <div className="library-order-actions">
+                    <button
+                      type="button"
+                      disabled={librarySaving || libraryIndex === 0}
+                      aria-label={`上移函数库 ${name}`}
+                      title="上移"
+                      onClick={() => handleMoveLibrary(name, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        librarySaving || libraryIndex === libraries.length - 1
+                      }
+                      aria-label={`下移函数库 ${name}`}
+                      title="下移"
+                      onClick={() => handleMoveLibrary(name, 1)}
+                    >
+                      ↓
+                    </button>
+                  </div>
                   <button
+                    className="library-delete-button"
                     type="button"
                     disabled={librarySaving}
                     aria-label={`删除函数库 ${name}`}
