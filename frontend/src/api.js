@@ -1,5 +1,12 @@
 const FUNCTIONS_ENDPOINT = "api/functions";
 const LIBRARIES_ENDPOINT = "api/libraries";
+const AUTH_ENDPOINT = "api/auth";
+
+function notifyUnauthorized(response) {
+  if (response.status === 401) {
+    window.dispatchEvent(new Event("studyapp:unauthorized"));
+  }
+}
 
 async function requestFrom(endpoint, path = "", options = {}) {
   const response = await fetch(`${endpoint}${path}`, {
@@ -14,6 +21,7 @@ async function requestFrom(endpoint, path = "", options = {}) {
     return null;
   }
 
+  notifyUnauthorized(response);
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -55,6 +63,7 @@ export async function exportFunctions() {
   const response = await fetch(`${FUNCTIONS_ENDPOINT}/export`);
 
   if (!response.ok) {
+    notifyUnauthorized(response);
     const data = await response.json().catch(() => null);
     throw new Error(data?.message || `导出失败（${response.status}）`);
   }
@@ -83,5 +92,22 @@ export function createLibrary(name) {
 export function deleteLibrary(name) {
   return requestFrom(LIBRARIES_ENDPOINT, `/${encodeURIComponent(name)}`, {
     method: "DELETE",
+  });
+}
+
+export function getAdminSession() {
+  return requestFrom(AUTH_ENDPOINT, "/session");
+}
+
+export function loginAdmin(username, password) {
+  return requestFrom(AUTH_ENDPOINT, "/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function logoutAdmin() {
+  return requestFrom(AUTH_ENDPOINT, "/logout", {
+    method: "POST",
   });
 }
