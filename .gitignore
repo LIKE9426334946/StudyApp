@@ -3,4 +3,5 @@ dist/
 .env
 *.log
 backend/data/*.tmp
+backend/data/admin-sessions.json
 
