@@ -12,8 +12,7 @@ const DEFAULT_SESSIONS_FILE = path.join(
 );
 const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
 const MAX_JSON_FILE_SIZE = 50 * 1024 * 1024;
-const ADMIN_USERNAME = "noart";
-const ADMIN_PASSWORD = "Suki-is-a-dummy";
+const DEFAULT_ADMIN_USERNAME = "noart";
 const SESSION_COOKIE_NAME = "studyapp_admin_session";
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -275,6 +274,23 @@ function createApp(options = {}) {
     options.librariesFile || process.env.LIBRARIES_FILE || DEFAULT_LIBRARIES_FILE;
   const sessionsFile =
     options.sessionsFile || process.env.SESSIONS_FILE || DEFAULT_SESSIONS_FILE;
+  const adminUsername =
+    normalizeText(
+      options.adminUsername ||
+        process.env.STUDYAPP_ADMIN_USERNAME ||
+        DEFAULT_ADMIN_USERNAME,
+    ) || DEFAULT_ADMIN_USERNAME;
+  const adminPassword =
+    typeof options.adminPassword === "string"
+      ? options.adminPassword
+      : process.env.STUDYAPP_ADMIN_PASSWORD;
+
+  if (!adminPassword) {
+    throw new Error(
+      "请先设置 STUDYAPP_ADMIN_PASSWORD 环境变量，再启动 StudyApp",
+    );
+  }
+
   const app = express();
 
   app.disable("x-powered-by");
@@ -296,8 +312,8 @@ function createApp(options = {}) {
         typeof req.body?.password === "string" ? req.body.password : "";
 
       if (
-        !safeEqual(username, ADMIN_USERNAME) ||
-        !safeEqual(password, ADMIN_PASSWORD)
+        !safeEqual(username, adminUsername) ||
+        !safeEqual(password, adminPassword)
       ) {
         return res.status(401).json({ message: "用户名或密码错误" });
       }
@@ -319,7 +335,7 @@ function createApp(options = {}) {
       );
       return res.json({
         authenticated: true,
-        username: ADMIN_USERNAME,
+        username: adminUsername,
         expiresAt,
       });
     } catch (error) {
@@ -357,7 +373,7 @@ function createApp(options = {}) {
 
       return res.json({
         authenticated: true,
-        username: ADMIN_USERNAME,
+        username: adminUsername,
         expiresAt: session.expiresAt,
       });
     } catch (error) {
@@ -618,6 +634,38 @@ function createApp(options = {}) {
       libraries.push(name);
       await writeLibraries(librariesFile, libraries);
       return res.status(201).json({ name });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.put("/api/libraries/order", requireAdmin, async (req, res, next) => {
+    try {
+      if (!Array.isArray(req.body?.libraries)) {
+        return res.status(400).json({ message: "函数库顺序必须是数组" });
+      }
+
+      const libraries = await readLibraries(librariesFile, dataFile);
+      const requestedLibraries = uniqueLibraryNames(req.body.libraries);
+
+      if (requestedLibraries.length !== libraries.length) {
+        return res.status(400).json({
+          message: "排序列表必须包含全部函数库，不能重复、缺少或新增名称",
+        });
+      }
+
+      const orderedLibraries = requestedLibraries.map((name) =>
+        findLibrary(libraries, name),
+      );
+
+      if (orderedLibraries.some((name) => !name)) {
+        return res.status(400).json({
+          message: "排序列表中包含不存在的函数库",
+        });
+      }
+
+      await writeLibraries(librariesFile, orderedLibraries);
+      return res.json(orderedLibraries);
     } catch (error) {
       return next(error);
     }
