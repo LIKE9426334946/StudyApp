@@ -47,6 +47,9 @@ function AdminView({ functions, onRefresh }) {
   const [librarySaving, setLibrarySaving] = useState(false);
   const [libraryMessage, setLibraryMessage] = useState("");
   const [libraryError, setLibraryError] = useState("");
+  const [librarySortOpen, setLibrarySortOpen] = useState(false);
+  const [librarySortDraft, setLibrarySortDraft] = useState([]);
+  const [draggedLibrary, setDraggedLibrary] = useState("");
   const [listLibrary, setListLibrary] = useState("");
   const [functionQuery, setFunctionQuery] = useState("");
   const importInputRef = useRef(null);
@@ -116,6 +119,27 @@ function AdminView({ functions, onRefresh }) {
       current && libraries.includes(current) ? current : libraries[0] || "",
     );
   }, [libraries]);
+
+  useEffect(() => {
+    if (!librarySortOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function closeWithEscape(event) {
+      if (event.key === "Escape" && !librarySaving) {
+        setLibrarySortOpen(false);
+        setDraggedLibrary("");
+      }
+    }
+
+    document.addEventListener("keydown", closeWithEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeWithEscape);
+    };
+  }, [librarySaving, librarySortOpen]);
 
   function updateField(event) {
     const { name, value } = event.target;
@@ -405,38 +429,99 @@ function AdminView({ functions, onRefresh }) {
     }
   }
 
-  async function handleMoveLibrary(name, direction) {
-    const currentIndex = libraries.indexOf(name);
-    const nextIndex = currentIndex + direction;
+  function openLibrarySort() {
+    setLibrarySortDraft([...libraries]);
+    setDraggedLibrary("");
+    setLibraryMessage("");
+    setLibraryError("");
+    setLibrarySortOpen(true);
+  }
 
-    if (
-      librarySaving ||
-      currentIndex < 0 ||
-      nextIndex < 0 ||
-      nextIndex >= libraries.length
-    ) {
+  function closeLibrarySort() {
+    if (librarySaving) return;
+
+    setLibrarySortOpen(false);
+    setDraggedLibrary("");
+  }
+
+  function moveLibraryInDraft(sourceName, targetName) {
+    if (!sourceName || sourceName === targetName) return;
+
+    setLibrarySortDraft((current) => {
+      const sourceIndex = current.indexOf(sourceName);
+      const targetIndex = current.indexOf(targetName);
+
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+
+      const next = [...current];
+      next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, sourceName);
+      return next;
+    });
+  }
+
+  function handleLibraryDragStart(event, name) {
+    setDraggedLibrary(name);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", name);
+  }
+
+  function handleLibraryDragEnter(event, targetName) {
+    event.preventDefault();
+    moveLibraryInDraft(draggedLibrary, targetName);
+  }
+
+  function handleLibrarySortKeyDown(event, name) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+
+    event.preventDefault();
+    const direction = event.key === "ArrowUp" ? -1 : 1;
+
+    setLibrarySortDraft((current) => {
+      const currentIndex = current.indexOf(name);
+      const nextIndex = currentIndex + direction;
+
+      if (
+        currentIndex < 0 ||
+        nextIndex < 0 ||
+        nextIndex >= current.length
+      ) {
+        return current;
+      }
+
+      const next = [...current];
+      [next[currentIndex], next[nextIndex]] = [
+        next[nextIndex],
+        next[currentIndex],
+      ];
+      return next;
+    });
+  }
+
+  async function handleSaveLibraryOrder() {
+    if (librarySaving) return;
+
+    const orderChanged =
+      librarySortDraft.length === libraries.length &&
+      librarySortDraft.some((name, index) => name !== libraries[index]);
+
+    if (!orderChanged) {
+      closeLibrarySort();
       return;
     }
 
-    const previousLibraries = [...libraries];
-    const nextLibraries = [...libraries];
-    [nextLibraries[currentIndex], nextLibraries[nextIndex]] = [
-      nextLibraries[nextIndex],
-      nextLibraries[currentIndex],
-    ];
-
-    setLibraries(nextLibraries);
     setLibrarySaving(true);
     setLibraryMessage("");
     setLibraryError("");
 
     try {
-      const savedLibraries = await updateLibraryOrder(nextLibraries);
+      const savedLibraries = await updateLibraryOrder(librarySortDraft);
       setLibraries(savedLibraries);
+      setLibrarySortOpen(false);
+      setDraggedLibrary("");
       await onRefresh();
       setLibraryMessage("函数库顺序已经保存。");
     } catch (requestError) {
-      setLibraries(previousLibraries);
       setLibraryError(requestError.message);
     } finally {
       setLibrarySaving(false);
@@ -527,51 +612,63 @@ function AdminView({ functions, onRefresh }) {
             <p>可以新增、删除或调整函数库顺序，排序结果会保存在服务器上。</p>
           </div>
 
-          <form
-            className="library-create-form library-create-with-directory"
-            onSubmit={handleCreateLibrary}
-          >
-            <select
-              value={newLibraryDirectory}
-              onChange={(event) => setNewLibraryDirectory(event.target.value)}
-              disabled={librarySaving || directories.length === 0}
-              aria-label="新函数库所属目录"
-            >
-              <option value="" disabled>
-                选择目录
-              </option>
-              {directories.map((directory) => (
-                <option value={directory.name} key={directory.name}>
-                  {directory.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              value={newLibrary}
-              onChange={(event) => setNewLibrary(event.target.value)}
-              placeholder="例如：Pandas"
-              maxLength="50"
-              aria-label="新函数库名称"
-            />
+          <div className="library-manager-tools">
             <button
-              type="submit"
-              disabled={
-                librarySaving ||
-                !newLibrary.trim() ||
-                !newLibraryDirectory
-              }
+              className="library-sort-open-button"
+              type="button"
+              disabled={librarySaving || libraries.length < 2}
+              onClick={openLibrarySort}
             >
-              ＋ 新增函数库
+              <span aria-hidden="true">☷</span>
+              调整顺序
             </button>
-          </form>
+
+            <form
+              className="library-create-form library-create-with-directory"
+              onSubmit={handleCreateLibrary}
+            >
+              <select
+                value={newLibraryDirectory}
+                onChange={(event) => setNewLibraryDirectory(event.target.value)}
+                disabled={librarySaving || directories.length === 0}
+                aria-label="新函数库所属目录"
+              >
+                <option value="" disabled>
+                  选择目录
+                </option>
+                {directories.map((directory) => (
+                  <option value={directory.name} key={directory.name}>
+                    {directory.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={newLibrary}
+                onChange={(event) => setNewLibrary(event.target.value)}
+                placeholder="例如：Pandas"
+                maxLength="50"
+                aria-label="新函数库名称"
+              />
+              <button
+                type="submit"
+                disabled={
+                  librarySaving ||
+                  !newLibrary.trim() ||
+                  !newLibraryDirectory
+                }
+              >
+                ＋ 新增函数库
+              </button>
+            </form>
+          </div>
         </div>
 
         <div className="library-chip-list">
           {libraries.length === 0 ? (
             <p>还没有函数库，请先新增一个。</p>
           ) : (
-            libraries.map((name, libraryIndex) => {
+            libraries.map((name) => {
               const functionCount = functions.filter(
                 (item) => item.library === name,
               ).length;
@@ -595,28 +692,6 @@ function AdminView({ functions, onRefresh }) {
                       </option>
                     ))}
                   </select>
-                  <div className="library-order-actions">
-                    <button
-                      type="button"
-                      disabled={librarySaving || libraryIndex === 0}
-                      aria-label={`上移函数库 ${name}`}
-                      title="上移"
-                      onClick={() => handleMoveLibrary(name, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      disabled={
-                        librarySaving || libraryIndex === libraries.length - 1
-                      }
-                      aria-label={`下移函数库 ${name}`}
-                      title="下移"
-                      onClick={() => handleMoveLibrary(name, 1)}
-                    >
-                      ↓
-                    </button>
-                  </div>
                   <button
                     className="library-delete-button"
                     type="button"
@@ -644,6 +719,114 @@ function AdminView({ functions, onRefresh }) {
           <p className="form-message error-message">{libraryError}</p>
         )}
       </section>
+
+      {librarySortOpen && (
+        <div
+          className="library-sort-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeLibrarySort();
+          }}
+        >
+          <section
+            className="library-sort-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="library-sort-title"
+          >
+            <header className="library-sort-heading">
+              <div>
+                <span>LIBRARY ORDER</span>
+                <h2 id="library-sort-title">调整函数库顺序</h2>
+                <p>按住左侧手柄拖动，全部调整完成后再统一保存。</p>
+              </div>
+              <button
+                className="library-sort-close"
+                type="button"
+                disabled={librarySaving}
+                aria-label="关闭排序"
+                onClick={closeLibrarySort}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="library-sort-list" role="list">
+              {librarySortDraft.map((name, index) => {
+                const functionCount = functions.filter(
+                  (item) => item.library === name,
+                ).length;
+
+                return (
+                  <div
+                    className={`library-sort-item${
+                      draggedLibrary === name ? " is-dragging" : ""
+                    }`}
+                    key={name}
+                    role="listitem"
+                    tabIndex="0"
+                    draggable={!librarySaving}
+                    aria-label={`${name}，当前第 ${index + 1} 位`}
+                    aria-grabbed={draggedLibrary === name}
+                    title="拖动调整顺序；也可以使用键盘方向键"
+                    onDragStart={(event) =>
+                      handleLibraryDragStart(event, name)
+                    }
+                    onDragEnter={(event) =>
+                      handleLibraryDragEnter(event, name)
+                    }
+                    onDragOver={(event) => event.preventDefault()}
+                    onDragEnd={() => setDraggedLibrary("")}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      setDraggedLibrary("");
+                    }}
+                    onKeyDown={(event) =>
+                      handleLibrarySortKeyDown(event, name)
+                    }
+                  >
+                    <span className="library-sort-position">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="library-drag-handle" aria-hidden="true">
+                      ⠿
+                    </span>
+                    <strong>{name}</strong>
+                    <span className="library-sort-directory">
+                      {libraryDirectoryMap.get(name) || "未分类"}
+                    </span>
+                    <small>{functionCount} 个函数</small>
+                  </div>
+                );
+              })}
+            </div>
+
+            {libraryError && (
+              <p className="form-message error-message library-sort-error">
+                {libraryError}
+              </p>
+            )}
+
+            <footer className="library-sort-actions">
+              <button
+                type="button"
+                disabled={librarySaving}
+                onClick={closeLibrarySort}
+              >
+                取消
+              </button>
+              <button
+                className="library-sort-save"
+                type="button"
+                disabled={librarySaving}
+                onClick={handleSaveLibraryOrder}
+              >
+                {librarySaving ? "正在保存……" : "保存顺序"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
 
       <section className="data-transfer-card">
         <div>
