@@ -1,5 +1,6 @@
 const FUNCTIONS_ENDPOINT = "api/functions";
 const LIBRARIES_ENDPOINT = "api/libraries";
+const DIRECTORIES_ENDPOINT = "api/directories";
 const AUTH_ENDPOINT = "api/auth";
 
 function notifyUnauthorized(response) {
@@ -82,10 +83,10 @@ export function getLibraries() {
   return requestFrom(LIBRARIES_ENDPOINT);
 }
 
-export function createLibrary(name) {
+export function createLibrary(name, directory) {
   return requestFrom(LIBRARIES_ENDPOINT, "", {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, directory }),
   });
 }
 
@@ -98,6 +99,34 @@ export function updateLibraryOrder(libraries) {
 
 export function deleteLibrary(name) {
   return requestFrom(LIBRARIES_ENDPOINT, `/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+}
+
+export function updateLibraryDirectory(name, directory) {
+  return requestFrom(
+    LIBRARIES_ENDPOINT,
+    `/${encodeURIComponent(name)}/directory`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ directory }),
+    },
+  );
+}
+
+export function getDirectories() {
+  return requestFrom(DIRECTORIES_ENDPOINT);
+}
+
+export function createDirectory(name) {
+  return requestFrom(DIRECTORIES_ENDPOINT, "", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteDirectory(name) {
+  return requestFrom(DIRECTORIES_ENDPOINT, `/${encodeURIComponent(name)}`, {
     method: "DELETE",
   });
 }

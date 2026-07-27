@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   getAdminSession,
+  getDirectories,
   getFunctions,
   getLibraries,
   logoutAdmin,
@@ -15,6 +16,7 @@ function App() {
   const [mode, setMode] = useState("study");
   const [functions, setFunctions] = useState([]);
   const [libraries, setLibraries] = useState([]);
+  const [directories, setDirectories] = useState([]);
   const [favorites, setFavorites] = useState(() => loadFavorites());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -25,12 +27,14 @@ function App() {
     setError("");
 
     try {
-      const [functionData, libraryData] = await Promise.all([
+      const [functionData, libraryData, directoryData] = await Promise.all([
         getFunctions(),
         getLibraries(),
+        getDirectories(),
       ]);
       setFunctions(functionData);
       setLibraries(libraryData);
+      setDirectories(directoryData);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -144,6 +148,7 @@ function App() {
           <StudyView
             functions={functions}
             libraries={libraries}
+            directories={directories}
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
           />

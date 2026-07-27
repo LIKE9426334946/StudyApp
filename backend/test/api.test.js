@@ -9,6 +9,7 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "study-app-"));
   const dataFile = path.join(tempDirectory, "functions.json");
   const librariesFile = path.join(tempDirectory, "libraries.json");
+  const directoriesFile = path.join(tempDirectory, "directories.json");
   const sessionsFile = path.join(tempDirectory, "admin-sessions.json");
 
   await fs.writeFile(
@@ -27,10 +28,19 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
     "utf8",
   );
   await fs.writeFile(librariesFile, JSON.stringify(["JavaScript"]), "utf8");
+  await fs.writeFile(
+    directoriesFile,
+    JSON.stringify([
+      { name: "JavaScript", libraries: ["JavaScript"] },
+      { name: "未分类", libraries: [] },
+    ]),
+    "utf8",
+  );
 
   const server = createApp({
     dataFile,
     librariesFile,
+    directoriesFile,
     sessionsFile,
     adminUsername: "noart",
     adminPassword: "test-admin-password",
@@ -55,6 +65,13 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   assert.equal(librariesResponse.status, 200);
   assert.deepEqual(await librariesResponse.json(), ["JavaScript"]);
 
+  const directoriesResponse = await fetch(`${baseUrl}/api/directories`);
+  assert.equal(directoriesResponse.status, 200);
+  assert.deepEqual(await directoriesResponse.json(), [
+    { name: "JavaScript", libraries: ["JavaScript"] },
+    { name: "未分类", libraries: [] },
+  ]);
+
   const unauthorizedCreateResponse = await fetch(`${baseUrl}/api/functions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -76,6 +93,16 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
     },
   );
   assert.equal(unauthorizedLibraryOrderResponse.status, 401);
+
+  const unauthorizedDirectoryResponse = await fetch(
+    `${baseUrl}/api/directories`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Python" }),
+    },
+  );
+  assert.equal(unauthorizedDirectoryResponse.status, 401);
 
   const wrongLoginResponse = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
@@ -132,16 +159,33 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   );
   assert.equal(unknownLibraryResponse.status, 400);
 
-  const createLibraryResponse = await authenticatedFetch(
-    `${baseUrl}/api/libraries`,
+  const createDirectoryResponse = await authenticatedFetch(
+    `${baseUrl}/api/directories`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Python" }),
     },
   );
+  assert.equal(createDirectoryResponse.status, 201);
+  assert.deepEqual(await createDirectoryResponse.json(), {
+    name: "Python",
+    libraries: [],
+  });
+
+  const createLibraryResponse = await authenticatedFetch(
+    `${baseUrl}/api/libraries`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Python", directory: "Python" }),
+    },
+  );
   assert.equal(createLibraryResponse.status, 201);
-  assert.deepEqual(await createLibraryResponse.json(), { name: "Python" });
+  assert.deepEqual(await createLibraryResponse.json(), {
+    name: "Python",
+    directory: "Python",
+  });
 
   const orderLibrariesResponse = await authenticatedFetch(
     `${baseUrl}/api/libraries/order`,
@@ -173,6 +217,30 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
     "JavaScript",
   ]);
 
+  const moveLibraryResponse = await authenticatedFetch(
+    `${baseUrl}/api/libraries/${encodeURIComponent("Python")}/directory`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ directory: "JavaScript" }),
+    },
+  );
+  assert.equal(moveLibraryResponse.status, 200);
+  assert.deepEqual(await moveLibraryResponse.json(), {
+    name: "Python",
+    directory: "JavaScript",
+  });
+
+  const moveLibraryBackResponse = await authenticatedFetch(
+    `${baseUrl}/api/libraries/${encodeURIComponent("Python")}/directory`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ directory: "Python" }),
+    },
+  );
+  assert.equal(moveLibraryBackResponse.status, 200);
+
   const duplicateLibraryResponse = await authenticatedFetch(
     `${baseUrl}/api/libraries`,
     {
@@ -183,15 +251,47 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   );
   assert.equal(duplicateLibraryResponse.status, 409);
 
+  const createTemporaryDirectoryResponse = await authenticatedFetch(
+    `${baseUrl}/api/directories`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "临时目录" }),
+    },
+  );
+  assert.equal(createTemporaryDirectoryResponse.status, 201);
+
   const createEmptyLibraryResponse = await authenticatedFetch(
     `${baseUrl}/api/libraries`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Rust" }),
+      body: JSON.stringify({ name: "Rust", directory: "临时目录" }),
     },
   );
   assert.equal(createEmptyLibraryResponse.status, 201);
+
+  const deleteTemporaryDirectoryResponse = await authenticatedFetch(
+    `${baseUrl}/api/directories/${encodeURIComponent("临时目录")}`,
+    { method: "DELETE" },
+  );
+  assert.equal(deleteTemporaryDirectoryResponse.status, 204);
+
+  const directoriesAfterDeleteResponse = await fetch(
+    `${baseUrl}/api/directories`,
+  );
+  const directoriesAfterDelete = await directoriesAfterDeleteResponse.json();
+  assert.ok(
+    directoriesAfterDelete
+      .find((directory) => directory.name === "未分类")
+      .libraries.includes("Rust"),
+  );
+
+  const deleteUncategorizedResponse = await authenticatedFetch(
+    `${baseUrl}/api/directories/${encodeURIComponent("未分类")}`,
+    { method: "DELETE" },
+  );
+  assert.equal(deleteUncategorizedResponse.status, 409);
 
   const deleteEmptyLibraryResponse = await authenticatedFetch(
     `${baseUrl}/api/libraries/${encodeURIComponent("Rust")}`,
@@ -413,4 +513,78 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
     `${baseUrl}/api/auth/session`,
   );
   assert.equal(expiredSessionResponse.status, 401);
+});
+
+test("旧函数库数据会自动迁移到目录结构", async (t) => {
+  const tempDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "study-app-directory-migration-"),
+  );
+  const dataFile = path.join(tempDirectory, "functions.json");
+  const librariesFile = path.join(tempDirectory, "libraries.json");
+  const directoriesFile = path.join(tempDirectory, "directories.json");
+  const sessionsFile = path.join(tempDirectory, "admin-sessions.json");
+
+  await fs.writeFile(dataFile, "[]", "utf8");
+  await fs.writeFile(
+    librariesFile,
+    JSON.stringify([
+      "Linux",
+      "Python",
+      "strings",
+      "list",
+      "tuple",
+      "set",
+      "dict",
+      "NumPy",
+    ]),
+    "utf8",
+  );
+
+  const server = createApp({
+    dataFile,
+    librariesFile,
+    directoriesFile,
+    sessionsFile,
+    adminPassword: "test-admin-password",
+  }).listen(0, "127.0.0.1");
+  await new Promise((resolve) => server.once("listening", resolve));
+
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  t.after(async () => {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    await fs.rm(tempDirectory, { recursive: true, force: true });
+  });
+
+  const response = await fetch(`${baseUrl}/api/directories`);
+  assert.equal(response.status, 200);
+  const directories = await response.json();
+  const pythonDirectory = directories.find(
+    (directory) => directory.name === "Python",
+  );
+  const linuxDirectory = directories.find(
+    (directory) => directory.name === "Linux",
+  );
+
+  assert.deepEqual(pythonDirectory.libraries, [
+    "Python",
+    "strings",
+    "list",
+    "tuple",
+    "set",
+    "dict",
+    "NumPy",
+  ]);
+  assert.deepEqual(linuxDirectory.libraries, ["Linux"]);
+  assert.ok(
+    directories.some((directory) => directory.name === "未分类"),
+  );
+
+  const storedDirectories = JSON.parse(
+    await fs.readFile(directoriesFile, "utf8"),
+  );
+  assert.deepEqual(storedDirectories, directories);
 });

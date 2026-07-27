@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  createDirectory,
   createFunction,
   createLibrary,
+  deleteDirectory,
   deleteFunction,
   deleteLibrary,
   exportFunctions,
+  getDirectories,
   getLibraries,
   importFunctions,
+  updateLibraryDirectory,
   updateLibraryOrder,
   updateFunction,
 } from "../api";
@@ -33,7 +37,13 @@ function AdminView({ functions, onRefresh }) {
   const [transferMessage, setTransferMessage] = useState("");
   const [transferError, setTransferError] = useState("");
   const [libraries, setLibraries] = useState([]);
+  const [directories, setDirectories] = useState([]);
+  const [newDirectory, setNewDirectory] = useState("");
+  const [directorySaving, setDirectorySaving] = useState(false);
+  const [directoryMessage, setDirectoryMessage] = useState("");
+  const [directoryError, setDirectoryError] = useState("");
   const [newLibrary, setNewLibrary] = useState("");
+  const [newLibraryDirectory, setNewLibraryDirectory] = useState("");
   const [librarySaving, setLibrarySaving] = useState(false);
   const [libraryMessage, setLibraryMessage] = useState("");
   const [libraryError, setLibraryError] = useState("");
@@ -56,27 +66,50 @@ function AdminView({ functions, onRefresh }) {
     );
   }, [functionQuery, selectedLibraryFunctions]);
 
-  const loadLibraries = useCallback(async () => {
+  const libraryDirectoryMap = useMemo(
+    () =>
+      new Map(
+        directories.flatMap((directory) =>
+          directory.libraries.map((name) => [name, directory.name]),
+        ),
+      ),
+    [directories],
+  );
+
+  const loadCatalog = useCallback(async () => {
     setLibraryError("");
+    setDirectoryError("");
 
     try {
-      const data = await getLibraries();
-      setLibraries(data);
+      const [libraryData, directoryData] = await Promise.all([
+        getLibraries(),
+        getDirectories(),
+      ]);
+      setLibraries(libraryData);
+      setDirectories(directoryData);
       setForm((current) => ({
         ...current,
         library:
-          current.library && data.includes(current.library)
+          current.library && libraryData.includes(current.library)
             ? current.library
             : "",
       }));
+      setNewLibraryDirectory((current) =>
+        current && directoryData.some((item) => item.name === current)
+          ? current
+          : directoryData.find((item) => item.name !== "未分类")?.name ||
+            directoryData[0]?.name ||
+            "",
+      );
     } catch (requestError) {
       setLibraryError(requestError.message);
+      setDirectoryError(requestError.message);
     }
   }, []);
 
   useEffect(() => {
-    loadLibraries();
-  }, [loadLibraries]);
+    loadCatalog();
+  }, [loadCatalog]);
 
   useEffect(() => {
     setListLibrary((current) =>
@@ -223,7 +256,7 @@ function AdminView({ functions, onRefresh }) {
 
       const result = await importFunctions(importedData, importMode);
       await onRefresh();
-      await loadLibraries();
+      await loadCatalog();
       setTransferMessage(result.message);
     } catch (importError) {
       setTransferError(
@@ -233,6 +266,57 @@ function AdminView({ functions, onRefresh }) {
       );
     } finally {
       setTransferring(false);
+    }
+  }
+
+  async function handleCreateDirectory(event) {
+    event.preventDefault();
+    const name = newDirectory.trim();
+
+    if (!name) return;
+
+    setDirectorySaving(true);
+    setDirectoryMessage("");
+    setDirectoryError("");
+
+    try {
+      const created = await createDirectory(name);
+      setNewDirectory("");
+      await loadCatalog();
+      setNewLibraryDirectory(created.name);
+      setDirectoryMessage(`目录“${created.name}”已经新增。`);
+      await onRefresh();
+    } catch (requestError) {
+      setDirectoryError(requestError.message);
+    } finally {
+      setDirectorySaving(false);
+    }
+  }
+
+  async function handleDeleteDirectory(directory) {
+    if (directory.name === "未分类") return;
+
+    const confirmed = window.confirm(
+      directory.libraries.length > 0
+        ? `确定删除目录“${directory.name}”吗？其中的 ${directory.libraries.length} 个函数库会移到“未分类”，函数不会删除。`
+        : `确定删除目录“${directory.name}”吗？`,
+    );
+
+    if (!confirmed) return;
+
+    setDirectorySaving(true);
+    setDirectoryMessage("");
+    setDirectoryError("");
+
+    try {
+      await deleteDirectory(directory.name);
+      await loadCatalog();
+      await onRefresh();
+      setDirectoryMessage(`目录“${directory.name}”已经删除。`);
+    } catch (requestError) {
+      setDirectoryError(requestError.message);
+    } finally {
+      setDirectorySaving(false);
     }
   }
 
@@ -247,11 +331,44 @@ function AdminView({ functions, onRefresh }) {
     setLibraryError("");
 
     try {
-      const created = await createLibrary(name);
+      const created = await createLibrary(name, newLibraryDirectory);
       setNewLibrary("");
-      await loadLibraries();
-      setLibraryMessage(`函数库“${created.name}”已经新增。`);
+      await loadCatalog();
+      setLibraryMessage(
+        `函数库“${created.name}”已经新增到“${created.directory}”目录。`,
+      );
     } catch (requestError) {
+      setLibraryError(requestError.message);
+    } finally {
+      setLibrarySaving(false);
+    }
+  }
+
+  async function handleChangeLibraryDirectory(name, directory) {
+    const previousDirectories = directories;
+
+    setLibrarySaving(true);
+    setLibraryMessage("");
+    setLibraryError("");
+    setDirectories((current) =>
+      current.map((item) => ({
+        ...item,
+        libraries:
+          item.name === directory
+            ? [...item.libraries.filter((library) => library !== name), name]
+            : item.libraries.filter((library) => library !== name),
+      })),
+    );
+
+    try {
+      const updated = await updateLibraryDirectory(name, directory);
+      await loadCatalog();
+      await onRefresh();
+      setLibraryMessage(
+        `函数库“${updated.name}”已经移动到“${updated.directory}”目录。`,
+      );
+    } catch (requestError) {
+      setDirectories(previousDirectories);
       setLibraryError(requestError.message);
     } finally {
       setLibrarySaving(false);
@@ -279,7 +396,7 @@ function AdminView({ functions, onRefresh }) {
 
     try {
       await deleteLibrary(name);
-      await loadLibraries();
+      await loadCatalog();
       setLibraryMessage(`函数库“${name}”已经删除。`);
     } catch (requestError) {
       setLibraryError(requestError.message);
@@ -340,6 +457,68 @@ function AdminView({ functions, onRefresh }) {
         </div>
       </div>
 
+      <section className="library-manager-card directory-manager-card">
+        <div className="library-manager-heading">
+          <div>
+            <span>DIRECTORIES</span>
+            <h2>目录管理</h2>
+            <p>目录用于归类函数库，例如 Python 目录可以包含 strings、list 和 tuple。</p>
+          </div>
+
+          <form className="library-create-form" onSubmit={handleCreateDirectory}>
+            <input
+              type="text"
+              value={newDirectory}
+              onChange={(event) => setNewDirectory(event.target.value)}
+              placeholder="例如：Python"
+              maxLength="50"
+              aria-label="新目录名称"
+            />
+            <button
+              type="submit"
+              disabled={directorySaving || !newDirectory.trim()}
+            >
+              ＋ 新增目录
+            </button>
+          </form>
+        </div>
+
+        <div className="directory-chip-list">
+          {directories.length === 0 ? (
+            <p>还没有目录，请先新增一个。</p>
+          ) : (
+            directories.map((directory) => (
+              <div className="directory-chip" key={directory.name}>
+                <span>{directory.name}</span>
+                <small>{directory.libraries.length} 个函数库</small>
+                <button
+                  type="button"
+                  disabled={
+                    directorySaving || directory.name === "未分类"
+                  }
+                  aria-label={`删除目录 ${directory.name}`}
+                  title={
+                    directory.name === "未分类"
+                      ? "未分类目录用于接收没有归属的函数库，不能删除"
+                      : "删除目录"
+                  }
+                  onClick={() => handleDeleteDirectory(directory)}
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {directoryMessage && (
+          <p className="form-message success-message">{directoryMessage}</p>
+        )}
+        {directoryError && (
+          <p className="form-message error-message">{directoryError}</p>
+        )}
+      </section>
+
       <section className="library-manager-card">
         <div className="library-manager-heading">
           <div>
@@ -348,7 +527,25 @@ function AdminView({ functions, onRefresh }) {
             <p>可以新增、删除或调整函数库顺序，排序结果会保存在服务器上。</p>
           </div>
 
-          <form className="library-create-form" onSubmit={handleCreateLibrary}>
+          <form
+            className="library-create-form library-create-with-directory"
+            onSubmit={handleCreateLibrary}
+          >
+            <select
+              value={newLibraryDirectory}
+              onChange={(event) => setNewLibraryDirectory(event.target.value)}
+              disabled={librarySaving || directories.length === 0}
+              aria-label="新函数库所属目录"
+            >
+              <option value="" disabled>
+                选择目录
+              </option>
+              {directories.map((directory) => (
+                <option value={directory.name} key={directory.name}>
+                  {directory.name}
+                </option>
+              ))}
+            </select>
             <input
               type="text"
               value={newLibrary}
@@ -357,7 +554,14 @@ function AdminView({ functions, onRefresh }) {
               maxLength="50"
               aria-label="新函数库名称"
             />
-            <button type="submit" disabled={librarySaving || !newLibrary.trim()}>
+            <button
+              type="submit"
+              disabled={
+                librarySaving ||
+                !newLibrary.trim() ||
+                !newLibraryDirectory
+              }
+            >
               ＋ 新增函数库
             </button>
           </form>
@@ -376,6 +580,21 @@ function AdminView({ functions, onRefresh }) {
                 <div className="library-chip" key={name}>
                   <span>{name}</span>
                   <small>{functionCount} 个函数</small>
+                  <select
+                    className="library-directory-select"
+                    value={libraryDirectoryMap.get(name) || "未分类"}
+                    disabled={librarySaving || directories.length === 0}
+                    aria-label={`选择函数库 ${name} 的所属目录`}
+                    onChange={(event) =>
+                      handleChangeLibraryDirectory(name, event.target.value)
+                    }
+                  >
+                    {directories.map((directory) => (
+                      <option value={directory.name} key={directory.name}>
+                        {directory.name}
+                      </option>
+                    ))}
+                  </select>
                   <div className="library-order-actions">
                     <button
                       type="button"

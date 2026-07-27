@@ -3,9 +3,9 @@
 
 一个个人使用的代码函数学习网站 MVP。
 
-- 手机端学习页：查看函数名称、展开解释和代码、切换学习卡片、搜索和筛选、浏览器本地收藏。
-- 电脑端管理页：使用固定账号登录后，添加、修改、删除、查看函数，管理函数库，以及导入和导出 JSON 数据。
-- 数据保存：函数位于 `backend/data/functions.json`，函数库位于 `backend/data/libraries.json`。
+- 手机端学习页：按“目录 → 函数库 → 函数”三级结构浏览，搜索函数、展开解释和代码、切换学习卡片以及使用浏览器本地收藏。
+- 电脑端管理页：使用固定账号登录后，添加、修改、删除、查看函数，管理目录与函数库，以及导入和导出 JSON 数据。
+- 数据保存：函数位于 `backend/data/functions.json`，函数库位于 `backend/data/libraries.json`，目录与函数库归属位于 `backend/data/directories.json`。
 - 技术栈：React + Vite、Node.js + Express。
 
 ## 项目结构
@@ -21,6 +21,7 @@ StudyApp/
 ├── backend/                  # Express 后端
 │   ├── data/functions.json   # 函数数据
 │   ├── data/libraries.json   # 函数库列表
+│   ├── data/directories.json # 目录及函数库归属
 │   ├── src/app.js
 │   ├── test/api.test.js
 │   └── server.js
@@ -83,7 +84,7 @@ Vite 会把 `/api` 请求代理到 `127.0.0.1:3000`。
 npm test
 ```
 
-测试会在临时 JSON 文件上验证函数和函数库管理以及导入导出，不会修改正式数据。
+测试会在临时 JSON 文件上验证目录、函数库和函数管理以及导入导出，不会修改正式数据。
 
 ## 生产构建
 
@@ -127,9 +128,13 @@ HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm 
 | `POST` | `/api/functions` | 登录后添加函数 |
 | `PUT` | `/api/functions/:id` | 登录后修改函数 |
 | `DELETE` | `/api/functions/:id` | 登录后删除函数 |
+| `GET` | `/api/directories` | 获取目录及函数库归属 |
+| `POST` | `/api/directories` | 登录后新增目录 |
+| `DELETE` | `/api/directories/:name` | 登录后删除目录并将函数库移到“未分类” |
 | `GET` | `/api/libraries` | 获取函数库列表 |
 | `POST` | `/api/libraries` | 登录后新增函数库 |
 | `PUT` | `/api/libraries/order` | 登录后保存函数库顺序 |
+| `PUT` | `/api/libraries/:name/directory` | 登录后修改函数库所属目录 |
 | `DELETE` | `/api/libraries/:name` | 登录后删除空函数库 |
 
 管理界面只支持项目内置的一个固定账号，不提供注册或创建账号功能。登录成功后，
@@ -144,11 +149,17 @@ HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm 
 格式并要求确认。导入文件必须是 JSON 数组，导入和导出的单个
 `functions.json` 文件最大为 50MB。
 
-函数库在管理页面中单独新增、删除和排序。添加或修改函数时必须由用户从已有
-函数库中选择，新增函数后会保留本次选择，不会自动切换到其他库。仍然包含
-函数的函数库不能删除，需要先修改这些函数的所属库或删除函数。导入
-`functions.json` 时，文件中出现的新函数库会自动加入库列表。排序结果保存在
-`backend/data/libraries.json`。
+目录和函数库均可在管理页面中新增或删除；创建函数库时需要选择所属目录，
+已有函数库也可以随时移动到其他目录。删除目录不会删除其中的函数库和函数，
+这些函数库会自动移入“未分类”。“未分类”目录本身不能删除。
+
+添加或修改函数时必须由用户从已有函数库中选择，新增函数后会保留本次选择，
+不会自动切换到其他库。仍然包含函数的函数库不能删除，需要先修改这些函数的
+所属库或删除函数。导入 `functions.json` 时，文件中出现的新函数库会自动加入
+库列表并分配目录。旧数据首次升级时，`strings`、`list`、`tuple`、`set`、
+`dict`、`NumPy`、`PyTorch` 等常见 Python 函数库会自动归入 `Python`，
+无法判断归属的函数库进入“未分类”。函数库排序结果保存在
+`backend/data/libraries.json`，目录归属保存在 `backend/data/directories.json`。
 
 ## 部署到现有 Nginx
 
@@ -210,6 +221,8 @@ sudo systemctl status studyapp --no-pager
 sudo chown -R www-data:www-data /opt/StudyApp/backend/data
 sudo chmod 750 /opt/StudyApp/backend/data
 sudo chmod 640 /opt/StudyApp/backend/data/functions.json
+sudo chmod 640 /opt/StudyApp/backend/data/libraries.json
+sudo chmod 640 /opt/StudyApp/backend/data/directories.json
 ```
 
 Nginx 中的 `/blog` 配置：

@@ -43,11 +43,18 @@ function CodeIcon() {
   );
 }
 
-function StudyView({ functions, libraries: storedLibraries, favorites, onToggleFavorite }) {
+function StudyView({
+  functions,
+  libraries: storedLibraries,
+  directories: storedDirectories,
+  favorites,
+  onToggleFavorite,
+}) {
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [functionQuery, setFunctionQuery] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogDirectory, setCatalogDirectory] = useState("");
   const [catalogLibrary, setCatalogLibrary] = useState("");
   const [pendingCatalogFunctionId, setPendingCatalogFunctionId] = useState(null);
   const [library, setLibrary] = useState("全部");
@@ -67,6 +74,42 @@ function StudyView({ functions, libraries: storedLibraries, favorites, onToggleF
 
   const libraries = useMemo(() => ["全部", ...libraryNames], [libraryNames]);
 
+  const directories = useMemo(() => {
+    const assignedLibraries = new Set();
+    const normalized = (storedDirectories || []).map((directory) => {
+      const directoryLibraries = (directory.libraries || []).filter((name) => {
+        if (!libraryNames.includes(name) || assignedLibraries.has(name)) {
+          return false;
+        }
+
+        assignedLibraries.add(name);
+        return true;
+      });
+
+      return {
+        name: directory.name,
+        libraries: directoryLibraries,
+      };
+    });
+    const unassigned = libraryNames.filter(
+      (name) => !assignedLibraries.has(name),
+    );
+
+    if (unassigned.length > 0) {
+      const uncategorized = normalized.find(
+        (directory) => directory.name === "未分类",
+      );
+
+      if (uncategorized) {
+        uncategorized.libraries.push(...unassigned);
+      } else {
+        normalized.push({ name: "未分类", libraries: unassigned });
+      }
+    }
+
+    return normalized;
+  }, [libraryNames, storedDirectories]);
+
   const visibleFunctions = useMemo(() => {
     const normalizedQuery = functionQuery.trim().toLowerCase();
 
@@ -82,13 +125,36 @@ function StudyView({ functions, libraries: storedLibraries, favorites, onToggleF
     });
   }, [favorites, favoritesOnly, functionQuery, functions, library]);
 
+  const catalogDirectories = useMemo(() => {
+    return directories.map((directory) => ({
+      ...directory,
+      functionCount: functions.filter((item) =>
+        directory.libraries.includes(item.library),
+      ).length,
+    }));
+  }, [directories, functions]);
+
+  const libraryDirectoryMap = useMemo(
+    () =>
+      new Map(
+        directories.flatMap((directory) =>
+          directory.libraries.map((name) => [name, directory.name]),
+        ),
+      ),
+    [directories],
+  );
+
   const catalogLibraries = useMemo(() => {
-    return libraryNames
+    const selectedDirectory = directories.find(
+      (directory) => directory.name === catalogDirectory,
+    );
+
+    return (selectedDirectory?.libraries || [])
       .map((name) => ({
         name,
         count: functions.filter((item) => item.library === name).length,
       }));
-  }, [functions, libraryNames]);
+  }, [catalogDirectory, directories, functions]);
 
   const catalogSearchFunctions = useMemo(() => {
     const normalizedQuery = catalogQuery.trim().toLowerCase();
@@ -149,6 +215,7 @@ function StudyView({ functions, libraries: storedLibraries, favorites, onToggleF
   function showCatalog() {
     setFavoritesOnly(false);
     setCatalogQuery("");
+    setCatalogDirectory("");
     setCatalogLibrary("");
     setCatalogOpen(true);
   }
@@ -357,7 +424,7 @@ function StudyView({ functions, libraries: storedLibraries, favorites, onToggleF
                   <button
                     className="mobile-catalog-back"
                     type="button"
-                    aria-label="返回函数库目录"
+                    aria-label={`返回${catalogDirectory}目录`}
                     onClick={() => setCatalogLibrary("")}
                   >
                     <BackIcon />
@@ -367,10 +434,25 @@ function StudyView({ functions, libraries: storedLibraries, favorites, onToggleF
                     <h2>{catalogLibrary}</h2>
                   </div>
                 </div>
+              ) : catalogDirectory ? (
+                <div className="mobile-catalog-title-with-back">
+                  <button
+                    className="mobile-catalog-back"
+                    type="button"
+                    aria-label="返回目录列表"
+                    onClick={() => setCatalogDirectory("")}
+                  >
+                    <BackIcon />
+                  </button>
+                  <div>
+                    <span>DIRECTORY</span>
+                    <h2>{catalogDirectory}</h2>
+                  </div>
+                </div>
               ) : (
                 <div>
-                  <span>FUNCTION LIBRARIES</span>
-                  <h2>函数库目录</h2>
+                  <span>DIRECTORIES</span>
+                  <h2>目录</h2>
                 </div>
               )}
               <button type="button" onClick={() => setCatalogOpen(false)}>
@@ -378,7 +460,7 @@ function StudyView({ functions, libraries: storedLibraries, favorites, onToggleF
               </button>
             </div>
 
-            {!catalogLibrary && (
+            {!catalogDirectory && !catalogLibrary && (
               <label className="mobile-catalog-search">
                 <span>⌕</span>
                 <input
@@ -391,8 +473,71 @@ function StudyView({ functions, libraries: storedLibraries, favorites, onToggleF
             )}
 
             <div className="mobile-catalog-list">
-              {!catalogLibrary &&
+              {!catalogDirectory &&
+                !catalogLibrary &&
                 !catalogQuery.trim() &&
+                catalogDirectories.map((item, itemIndex) => (
+                  <button
+                    className={
+                      item.libraries.includes(current?.library) ? "active" : ""
+                    }
+                    type="button"
+                    key={item.name}
+                    onClick={() => setCatalogDirectory(item.name)}
+                  >
+                    <span>{String(itemIndex + 1).padStart(2, "0")}</span>
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>
+                        {item.libraries.length} 个函数库 · {item.functionCount} 个函数
+                      </small>
+                    </span>
+                    <span>›</span>
+                  </button>
+                ))}
+
+              {!catalogDirectory &&
+                !catalogLibrary &&
+                !catalogQuery.trim() &&
+                catalogDirectories.length === 0 && (
+                <p className="mobile-catalog-empty">
+                  还没有目录。
+                </p>
+              )}
+
+              {!catalogDirectory &&
+                !catalogLibrary &&
+                catalogQuery.trim() &&
+                catalogSearchFunctions.map((item, itemIndex) => (
+                  <button
+                    className={current?.id === item.id ? "active" : ""}
+                    type="button"
+                    key={item.id}
+                    onClick={() => selectCatalogFunction(item.id)}
+                  >
+                    <span>{String(itemIndex + 1).padStart(2, "0")}</span>
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>
+                        {libraryDirectoryMap.get(item.library) || "未分类"} ·{" "}
+                        {item.library}
+                      </small>
+                    </span>
+                    <span>›</span>
+                  </button>
+                ))}
+
+              {!catalogDirectory &&
+                !catalogLibrary &&
+                catalogQuery.trim() &&
+                catalogSearchFunctions.length === 0 && (
+                  <p className="mobile-catalog-empty">
+                    没有找到名称包含“{catalogQuery.trim()}”的函数。
+                  </p>
+                )}
+
+              {catalogDirectory &&
+                !catalogLibrary &&
                 catalogLibraries.map((item, itemIndex) => (
                   <button
                     className={current?.library === item.name ? "active" : ""}
@@ -409,37 +554,11 @@ function StudyView({ functions, libraries: storedLibraries, favorites, onToggleF
                   </button>
                 ))}
 
-              {!catalogLibrary &&
-                !catalogQuery.trim() &&
+              {catalogDirectory &&
+                !catalogLibrary &&
                 catalogLibraries.length === 0 && (
-                <p className="mobile-catalog-empty">
-                  还没有函数库。
-                </p>
-              )}
-
-              {!catalogLibrary &&
-                catalogQuery.trim() &&
-                catalogSearchFunctions.map((item, itemIndex) => (
-                  <button
-                    className={current?.id === item.id ? "active" : ""}
-                    type="button"
-                    key={item.id}
-                    onClick={() => selectCatalogFunction(item.id)}
-                  >
-                    <span>{String(itemIndex + 1).padStart(2, "0")}</span>
-                    <span>
-                      <strong>{item.name}</strong>
-                      <small>{item.library}</small>
-                    </span>
-                    <span>›</span>
-                  </button>
-                ))}
-
-              {!catalogLibrary &&
-                catalogQuery.trim() &&
-                catalogSearchFunctions.length === 0 && (
                   <p className="mobile-catalog-empty">
-                    没有找到名称包含“{catalogQuery.trim()}”的函数。
+                    这个目录中还没有函数库。
                   </p>
                 )}
 
