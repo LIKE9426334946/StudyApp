@@ -838,10 +838,12 @@ textarea:focus-visible {
 }
 
 .library-sort-dialog {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   width: min(560px, 100%);
   max-height: min(720px, calc(100dvh - 48px));
   gap: 18px;
+  overflow: hidden;
   padding: 24px;
   border: 1px solid rgba(100, 95, 84, 0.22);
   border-radius: 20px;
@@ -897,11 +899,28 @@ textarea:focus-visible {
 
 .library-sort-list {
   display: grid;
+  flex: 1 1 auto;
   gap: 8px;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   padding: 2px 5px 2px 2px;
+}
+
+.library-sort-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.library-sort-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(49, 91, 76, 0.28);
+}
+
+.library-sort-list::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .library-sort-item {
