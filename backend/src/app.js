@@ -872,6 +872,42 @@ function createApp(options = {}) {
     }
   });
 
+  app.put("/api/directories/order", requireAdmin, async (req, res, next) => {
+    try {
+      if (!Array.isArray(req.body?.directories)) {
+        return res.status(400).json({ message: "目录顺序必须是数组" });
+      }
+
+      const directories = await readDirectories(
+        directoriesFile,
+        librariesFile,
+        dataFile,
+      );
+      const requestedNames = uniqueDirectoryNames(req.body.directories);
+
+      if (requestedNames.length !== directories.length) {
+        return res.status(400).json({
+          message: "排序列表必须包含全部目录，不能重复、缺少或新增名称",
+        });
+      }
+
+      const orderedDirectories = requestedNames.map((name) =>
+        findDirectory(directories, name),
+      );
+
+      if (orderedDirectories.some((directory) => !directory)) {
+        return res.status(400).json({
+          message: "排序列表中包含不存在的目录",
+        });
+      }
+
+      await writeDirectories(directoriesFile, orderedDirectories);
+      return res.json(orderedDirectories);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   app.delete("/api/directories/:name", requireAdmin, async (req, res, next) => {
     try {
       const directories = await readDirectories(
