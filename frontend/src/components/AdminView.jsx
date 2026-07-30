@@ -10,6 +10,7 @@ import {
   getDirectories,
   getLibraries,
   importFunctions,
+  updateDirectoryOrder,
   updateLibraryDirectory,
   updateLibraryOrder,
   updateFunction,
@@ -42,6 +43,9 @@ function AdminView({ functions, onRefresh }) {
   const [directorySaving, setDirectorySaving] = useState(false);
   const [directoryMessage, setDirectoryMessage] = useState("");
   const [directoryError, setDirectoryError] = useState("");
+  const [directorySortOpen, setDirectorySortOpen] = useState(false);
+  const [directorySortDraft, setDirectorySortDraft] = useState([]);
+  const [draggedDirectory, setDraggedDirectory] = useState("");
   const [newLibrary, setNewLibrary] = useState("");
   const [selectedLibraryDirectory, setSelectedLibraryDirectory] = useState("");
   const [librarySaving, setLibrarySaving] = useState(false);
@@ -125,20 +129,31 @@ function AdminView({ functions, onRefresh }) {
 
   useEffect(() => {
     setListLibrary((current) =>
-      current && libraries.includes(current) ? current : libraries[0] || "",
+      current && selectedDirectoryLibraries.includes(current)
+        ? current
+        : selectedDirectoryLibraries[0] || "",
     );
-  }, [libraries]);
+    setForm((current) => ({
+      ...current,
+      library:
+        current.library && selectedDirectoryLibraries.includes(current.library)
+          ? current.library
+          : selectedDirectoryLibraries[0] || "",
+    }));
+  }, [selectedDirectoryLibraries]);
 
   useEffect(() => {
-    if (!librarySortOpen) return undefined;
+    if (!librarySortOpen && !directorySortOpen) return undefined;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     function closeWithEscape(event) {
-      if (event.key === "Escape" && !librarySaving) {
+      if (event.key === "Escape" && !librarySaving && !directorySaving) {
         setLibrarySortOpen(false);
         setDraggedLibrary("");
+        setDirectorySortOpen(false);
+        setDraggedDirectory("");
       }
     }
 
@@ -148,7 +163,12 @@ function AdminView({ functions, onRefresh }) {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", closeWithEscape);
     };
-  }, [librarySaving, librarySortOpen]);
+  }, [
+    directorySaving,
+    directorySortOpen,
+    librarySaving,
+    librarySortOpen,
+  ]);
 
   function updateField(event) {
     const { name, value } = event.target;
@@ -156,19 +176,27 @@ function AdminView({ functions, onRefresh }) {
   }
 
   function changeListLibrary(event) {
-    setListLibrary(event.target.value);
+    const library = event.target.value;
+    setListLibrary(library);
+    setForm((current) => ({ ...current, library }));
     setFunctionQuery("");
   }
 
   function resetForm() {
-    setForm((current) => ({
+    setForm({
       ...EMPTY_FORM,
-      library: current.library,
-    }));
+      library: listLibrary,
+    });
     setEditingId(null);
   }
 
   function beginEdit(item) {
+    const directory = libraryDirectoryMap.get(item.library);
+
+    if (directory) {
+      setSelectedLibraryDirectory(directory);
+    }
+    setListLibrary(item.library);
     setEditingId(item.id);
     setForm({
       library: item.library,
@@ -180,6 +208,7 @@ function AdminView({ functions, onRefresh }) {
     });
     setMessage("");
     setError("");
+    setFunctionQuery("");
   }
 
   async function handleSubmit(event) {
@@ -302,6 +331,15 @@ function AdminView({ functions, onRefresh }) {
     }
   }
 
+  function selectDirectory(name) {
+    setSelectedLibraryDirectory(name);
+    setFunctionQuery("");
+    setLibraryMessage("");
+    setLibraryError("");
+    setMessage("");
+    setError("");
+  }
+
   async function handleCreateDirectory(event) {
     event.preventDefault();
     const name = newDirectory.trim();
@@ -316,7 +354,7 @@ function AdminView({ functions, onRefresh }) {
       const created = await createDirectory(name);
       setNewDirectory("");
       await loadCatalog();
-      setSelectedLibraryDirectory(created.name);
+      selectDirectory(created.name);
       setDirectoryMessage(`目录“${created.name}”已经新增。`);
       await onRefresh();
     } catch (requestError) {
@@ -346,6 +384,106 @@ function AdminView({ functions, onRefresh }) {
       await loadCatalog();
       await onRefresh();
       setDirectoryMessage(`目录“${directory.name}”已经删除。`);
+    } catch (requestError) {
+      setDirectoryError(requestError.message);
+    } finally {
+      setDirectorySaving(false);
+    }
+  }
+
+  function openDirectorySort() {
+    setDirectorySortDraft(directories.map((directory) => directory.name));
+    setDraggedDirectory("");
+    setDirectoryMessage("");
+    setDirectoryError("");
+    setDirectorySortOpen(true);
+  }
+
+  function closeDirectorySort() {
+    if (directorySaving) return;
+
+    setDirectorySortOpen(false);
+    setDraggedDirectory("");
+  }
+
+  function moveDirectoryInDraft(sourceName, targetName) {
+    if (!sourceName || sourceName === targetName) return;
+
+    setDirectorySortDraft((current) => {
+      const sourceIndex = current.indexOf(sourceName);
+      const targetIndex = current.indexOf(targetName);
+
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+
+      const next = [...current];
+      next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, sourceName);
+      return next;
+    });
+  }
+
+  function handleDirectoryDragStart(event, name) {
+    setDraggedDirectory(name);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", name);
+  }
+
+  function handleDirectoryDragEnter(event, targetName) {
+    event.preventDefault();
+    moveDirectoryInDraft(draggedDirectory, targetName);
+  }
+
+  function handleDirectorySortKeyDown(event, name) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+
+    event.preventDefault();
+    const direction = event.key === "ArrowUp" ? -1 : 1;
+
+    setDirectorySortDraft((current) => {
+      const currentIndex = current.indexOf(name);
+      const nextIndex = currentIndex + direction;
+
+      if (
+        currentIndex < 0 ||
+        nextIndex < 0 ||
+        nextIndex >= current.length
+      ) {
+        return current;
+      }
+
+      const next = [...current];
+      [next[currentIndex], next[nextIndex]] = [
+        next[nextIndex],
+        next[currentIndex],
+      ];
+      return next;
+    });
+  }
+
+  async function handleSaveDirectoryOrder() {
+    if (directorySaving) return;
+
+    const currentOrder = directories.map((directory) => directory.name);
+    const orderChanged =
+      directorySortDraft.length === currentOrder.length &&
+      directorySortDraft.some((name, index) => name !== currentOrder[index]);
+
+    if (!orderChanged) {
+      closeDirectorySort();
+      return;
+    }
+
+    setDirectorySaving(true);
+    setDirectoryMessage("");
+    setDirectoryError("");
+
+    try {
+      const savedDirectories = await updateDirectoryOrder(directorySortDraft);
+      setDirectories(savedDirectories);
+      setDirectorySortOpen(false);
+      setDraggedDirectory("");
+      await onRefresh();
+      setDirectoryMessage("目录顺序已经保存。");
     } catch (requestError) {
       setDirectoryError(requestError.message);
     } finally {
@@ -568,22 +706,37 @@ function AdminView({ functions, onRefresh }) {
             <p>目录用于归类函数库，例如 Python 目录可以包含 strings、list 和 tuple。</p>
           </div>
 
-          <form className="library-create-form" onSubmit={handleCreateDirectory}>
-            <input
-              type="text"
-              value={newDirectory}
-              onChange={(event) => setNewDirectory(event.target.value)}
-              placeholder="例如：Python"
-              maxLength="50"
-              aria-label="新目录名称"
-            />
+          <div className="directory-manager-tools">
             <button
-              type="submit"
-              disabled={directorySaving || !newDirectory.trim()}
+              className="library-sort-open-button"
+              type="button"
+              disabled={directorySaving || directories.length < 2}
+              onClick={openDirectorySort}
             >
-              ＋ 新增目录
+              <span aria-hidden="true">☷</span>
+              调整目录顺序
             </button>
-          </form>
+
+            <form
+              className="library-create-form"
+              onSubmit={handleCreateDirectory}
+            >
+              <input
+                type="text"
+                value={newDirectory}
+                onChange={(event) => setNewDirectory(event.target.value)}
+                placeholder="例如：Python"
+                maxLength="50"
+                aria-label="新目录名称"
+              />
+              <button
+                type="submit"
+                disabled={directorySaving || !newDirectory.trim()}
+              >
+                ＋ 新增目录
+              </button>
+            </form>
+          </div>
         </div>
 
         <div className="directory-chip-list">
@@ -591,10 +744,27 @@ function AdminView({ functions, onRefresh }) {
             <p>还没有目录，请先新增一个。</p>
           ) : (
             directories.map((directory) => (
-              <div className="directory-chip" key={directory.name}>
-                <span>{directory.name}</span>
-                <small>{directory.libraries.length} 个函数库</small>
+              <div
+                className={`directory-chip${
+                  selectedLibraryDirectory === directory.name
+                    ? " is-selected"
+                    : ""
+                }`}
+                key={directory.name}
+              >
                 <button
+                  className="directory-chip-select"
+                  type="button"
+                  aria-pressed={
+                    selectedLibraryDirectory === directory.name
+                  }
+                  onClick={() => selectDirectory(directory.name)}
+                >
+                  <span>{directory.name}</span>
+                  <small>{directory.libraries.length} 个函数库</small>
+                </button>
+                <button
+                  className="directory-delete-button"
                   type="button"
                   disabled={
                     directorySaving || directory.name === "未分类"
@@ -650,15 +820,13 @@ function AdminView({ functions, onRefresh }) {
               <select
                 value={selectedLibraryDirectory}
                 onChange={(event) => {
-                  setSelectedLibraryDirectory(event.target.value);
-                  setLibraryMessage("");
-                  setLibraryError("");
+                  selectDirectory(event.target.value);
                 }}
                 disabled={librarySaving || directories.length === 0}
                 aria-label="选择要管理的目录"
               >
                 <option value="" disabled>
-                  选择目录
+                  选择当前目录
                 </option>
                 {directories.map((directory) => (
                   <option value={directory.name} key={directory.name}>
@@ -747,6 +915,112 @@ function AdminView({ functions, onRefresh }) {
           <p className="form-message error-message">{libraryError}</p>
         )}
       </section>
+
+      {directorySortOpen && (
+        <div
+          className="library-sort-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeDirectorySort();
+          }}
+        >
+          <section
+            className="library-sort-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="directory-sort-title"
+          >
+            <header className="library-sort-heading">
+              <div>
+                <span>DIRECTORY ORDER</span>
+                <h2 id="directory-sort-title">调整目录顺序</h2>
+                <p>拖动目录连续调整，完成后一次保存到服务器。</p>
+              </div>
+              <button
+                className="library-sort-close"
+                type="button"
+                disabled={directorySaving}
+                aria-label="关闭目录排序"
+                onClick={closeDirectorySort}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="library-sort-list" role="list">
+              {directorySortDraft.map((name, index) => {
+                const libraryCount =
+                  directories.find((directory) => directory.name === name)
+                    ?.libraries.length || 0;
+
+                return (
+                  <div
+                    className={`library-sort-item${
+                      draggedDirectory === name ? " is-dragging" : ""
+                    }`}
+                    key={name}
+                    role="listitem"
+                    tabIndex="0"
+                    draggable={!directorySaving}
+                    aria-label={`${name}，当前第 ${index + 1} 位`}
+                    aria-grabbed={draggedDirectory === name}
+                    title="拖动调整顺序；也可以使用键盘方向键"
+                    onDragStart={(event) =>
+                      handleDirectoryDragStart(event, name)
+                    }
+                    onDragEnter={(event) =>
+                      handleDirectoryDragEnter(event, name)
+                    }
+                    onDragOver={(event) => event.preventDefault()}
+                    onDragEnd={() => setDraggedDirectory("")}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      setDraggedDirectory("");
+                    }}
+                    onKeyDown={(event) =>
+                      handleDirectorySortKeyDown(event, name)
+                    }
+                  >
+                    <span className="library-sort-position">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="library-drag-handle" aria-hidden="true">
+                      ⠿
+                    </span>
+                    <strong>{name}</strong>
+                    <span className="library-sort-directory">目录</span>
+                    <small>{libraryCount} 个函数库</small>
+                  </div>
+                );
+              })}
+            </div>
+
+            {directoryError && (
+              <p className="form-message error-message library-sort-error">
+                {directoryError}
+              </p>
+            )}
+
+            <footer className="library-sort-actions">
+              <button
+                type="button"
+                disabled={directorySaving}
+                onClick={closeDirectorySort}
+              >
+                取消
+              </button>
+              <button
+                className="library-sort-save"
+                type="button"
+                disabled={directorySaving}
+                onClick={handleSaveDirectoryOrder}
+              >
+                {directorySaving ? "正在保存……" : "保存顺序"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
 
       {librarySortOpen && (
         <div
@@ -910,6 +1184,61 @@ function AdminView({ functions, onRefresh }) {
         <p className="form-message error-message transfer-message">{transferError}</p>
       )}
 
+      <section className="function-scope-card">
+        <div className="function-scope-heading">
+          <span>FUNCTION WORKSPACE</span>
+          <h2>函数管理范围</h2>
+          <p>添加、修改和已有函数列表共用同一组目录与函数库选择。</p>
+        </div>
+
+        <div className="function-scope-controls">
+          <label>
+            <span>当前目录</span>
+            <select
+              value={selectedLibraryDirectory}
+              onChange={(event) => selectDirectory(event.target.value)}
+              disabled={directories.length === 0}
+            >
+              <option value="" disabled>
+                选择目录
+              </option>
+              {directories.map((directory) => (
+                <option value={directory.name} key={directory.name}>
+                  {directory.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>当前函数库</span>
+            <select
+              value={listLibrary}
+              onChange={changeListLibrary}
+              disabled={selectedDirectoryLibraries.length === 0}
+            >
+              <option value="" disabled>
+                {selectedDirectoryLibraries.length === 0
+                  ? "当前目录暂无函数库"
+                  : "选择函数库"}
+              </option>
+              {selectedDirectoryLibraries.map((name) => (
+                <option value={name} key={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="function-scope-summary" aria-live="polite">
+          <span>{selectedLibraryDirectory || "未选择目录"}</span>
+          <span aria-hidden="true">/</span>
+          <strong>{listLibrary || "未选择函数库"}</strong>
+          <small>{selectedLibraryFunctions.length} 个函数</small>
+        </div>
+      </section>
+
       <div className="admin-grid">
         <form className="editor-card" onSubmit={handleSubmit}>
           <div className="editor-title">
@@ -925,25 +1254,15 @@ function AdminView({ functions, onRefresh }) {
           </div>
 
           <div className="form-row">
-            <label>
-              函数库
-              <select
-                name="library"
-                value={form.library}
-                onChange={updateField}
-                required
-                disabled={libraries.length === 0}
-              >
-                <option value="" disabled>
-                  {libraries.length === 0 ? "请先新增函数库" : "请选择函数库"}
-                </option>
-                {libraries.map((name) => (
-                  <option value={name} key={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="editor-location">
+              <span>保存位置</span>
+              <strong>
+                {selectedLibraryDirectory || "未选择目录"}
+                <i aria-hidden="true">/</i>
+                {listLibrary || "未选择函数库"}
+              </strong>
+              <small>可在上方“函数管理范围”中切换</small>
+            </div>
 
             <label>
               函数名称 <span>*</span>
@@ -1013,7 +1332,7 @@ function AdminView({ functions, onRefresh }) {
           <button
             className="primary-button full-button"
             type="submit"
-            disabled={saving || libraries.length === 0}
+            disabled={saving || !listLibrary}
           >
             {saving ? "正在保存……" : editingId ? "保存修改" : "添加函数"}
           </button>
@@ -1026,24 +1345,6 @@ function AdminView({ functions, onRefresh }) {
               <h2>已有函数</h2>
             </div>
             <div className="function-list-tools">
-              <label className="function-library-filter">
-                <span aria-hidden="true">▦</span>
-                <select
-                  value={listLibrary}
-                  onChange={changeListLibrary}
-                  disabled={libraries.length === 0}
-                  aria-label="选择要查看的函数库"
-                >
-                  <option value="" disabled>
-                    选择函数库
-                  </option>
-                  {libraries.map((name) => (
-                    <option value={name} key={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <label className="function-list-search">
                 <span aria-hidden="true">⌕</span>
                 <input
@@ -1063,6 +1364,10 @@ function AdminView({ functions, onRefresh }) {
           <div className="admin-function-list">
             {functions.length === 0 ? (
               <div className="empty-list">还没有函数，请先添加一个。</div>
+            ) : selectedDirectoryLibraries.length === 0 ? (
+              <div className="empty-list">
+                “{selectedLibraryDirectory}”目录中还没有函数库。
+              </div>
             ) : !listLibrary ? (
               <div className="empty-list">请先选择要查看的函数库。</div>
             ) : selectedLibraryFunctions.length === 0 ? (
