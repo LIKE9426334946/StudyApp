@@ -3,7 +3,7 @@
 
 一个个人使用的代码函数学习网站 MVP。
 
-- 手机端学习页：按“目录 → 函数库 → 函数”三级结构浏览，搜索函数、展开解释和代码、切换学习卡片以及使用浏览器本地收藏。
+- 手机端学习页：按“目录 → 函数库 → 函数”三级结构浏览，搜索函数、展开解释和代码、切换学习卡片，并使用浏览器本地缓存和收藏。
 - 电脑端管理页：使用固定账号登录后，添加、修改、删除、查看函数，管理目录与函数库，以及导入和导出 JSON 数据。
 - 数据保存：函数位于 `backend/data/functions.json`，函数库位于 `backend/data/libraries.json`，目录与函数库归属位于 `backend/data/directories.json`。
 - 技术栈：React + Vite、Node.js + Express。
@@ -160,6 +160,10 @@ HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm 
 `dict`、`NumPy`、`PyTorch` 等常见 Python 函数库会自动归入 `Python`，
 无法判断归属的函数库进入“未分类”。函数库排序结果保存在
 `backend/data/libraries.json`，目录归属保存在 `backend/data/directories.json`。
+
+手机端首次使用时会从服务器初始化学习内容并保存到当前浏览器。之后打开学习页
+只读取这份缓存，不会自动同步电脑端刚修改的内容；在手机端目录首页点击“刷新”
+后，才会重新读取服务器上的函数、函数库和目录并替换本地缓存。
 
 ## 部署到现有 Nginx
 
