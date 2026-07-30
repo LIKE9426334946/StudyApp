@@ -2246,6 +2246,10 @@ textarea:focus-visible {
     margin-bottom: 20px;
   }
 
+  .mobile-catalog-header > div:first-child {
+    min-width: 0;
+  }
+
   .mobile-catalog-header span {
     color: #6b57eb;
     font-family: "SFMono-Regular", Consolas, monospace;
@@ -2270,6 +2274,59 @@ textarea:focus-visible {
     background: #e8e4ff;
     cursor: pointer;
     font-weight: 700;
+  }
+
+  .mobile-catalog-header-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .mobile-catalog-header .mobile-catalog-refresh {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #fff;
+    background: #6b57eb;
+  }
+
+  .mobile-catalog-header .mobile-catalog-refresh:disabled {
+    cursor: wait;
+    opacity: 0.68;
+  }
+
+  .mobile-catalog-refresh > span {
+    color: inherit;
+    font-family: inherit;
+    font-size: 17px;
+    letter-spacing: 0;
+    line-height: 1;
+  }
+
+  .mobile-catalog-refresh > span.refreshing {
+    animation: mobile-catalog-refresh-spin 700ms linear infinite;
+  }
+
+  @keyframes mobile-catalog-refresh-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .mobile-catalog-refresh-status {
+    margin: -8px 2px 14px;
+    padding: 9px 11px;
+    border-radius: 10px;
+    color: #3c6a55;
+    background: #e5f2ea;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .mobile-catalog-refresh-status.error {
+    color: #a8483f;
+    background: #f7e5e2;
   }
 
   .mobile-catalog-title-with-back {
