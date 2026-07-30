@@ -43,7 +43,7 @@ function AdminView({ functions, onRefresh }) {
   const [directoryMessage, setDirectoryMessage] = useState("");
   const [directoryError, setDirectoryError] = useState("");
   const [newLibrary, setNewLibrary] = useState("");
-  const [newLibraryDirectory, setNewLibraryDirectory] = useState("");
+  const [selectedLibraryDirectory, setSelectedLibraryDirectory] = useState("");
   const [librarySaving, setLibrarySaving] = useState(false);
   const [libraryMessage, setLibraryMessage] = useState("");
   const [libraryError, setLibraryError] = useState("");
@@ -79,6 +79,15 @@ function AdminView({ functions, onRefresh }) {
     [directories],
   );
 
+  const selectedDirectoryLibraries = useMemo(() => {
+    const directory = directories.find(
+      (item) => item.name === selectedLibraryDirectory,
+    );
+    const directoryLibraryNames = new Set(directory?.libraries || []);
+
+    return libraries.filter((name) => directoryLibraryNames.has(name));
+  }, [directories, libraries, selectedLibraryDirectory]);
+
   const loadCatalog = useCallback(async () => {
     setLibraryError("");
     setDirectoryError("");
@@ -97,7 +106,7 @@ function AdminView({ functions, onRefresh }) {
             ? current.library
             : "",
       }));
-      setNewLibraryDirectory((current) =>
+      setSelectedLibraryDirectory((current) =>
         current && directoryData.some((item) => item.name === current)
           ? current
           : directoryData.find((item) => item.name !== "未分类")?.name ||
@@ -307,7 +316,7 @@ function AdminView({ functions, onRefresh }) {
       const created = await createDirectory(name);
       setNewDirectory("");
       await loadCatalog();
-      setNewLibraryDirectory(created.name);
+      setSelectedLibraryDirectory(created.name);
       setDirectoryMessage(`目录“${created.name}”已经新增。`);
       await onRefresh();
     } catch (requestError) {
@@ -355,7 +364,7 @@ function AdminView({ functions, onRefresh }) {
     setLibraryError("");
 
     try {
-      const created = await createLibrary(name, newLibraryDirectory);
+      const created = await createLibrary(name, selectedLibraryDirectory);
       setNewLibrary("");
       await loadCatalog();
       setLibraryMessage(
@@ -430,7 +439,7 @@ function AdminView({ functions, onRefresh }) {
   }
 
   function openLibrarySort() {
-    setLibrarySortDraft([...libraries]);
+    setLibrarySortDraft([...selectedDirectoryLibraries]);
     setDraggedLibrary("");
     setLibraryMessage("");
     setLibraryError("");
@@ -502,8 +511,10 @@ function AdminView({ functions, onRefresh }) {
     if (librarySaving) return;
 
     const orderChanged =
-      librarySortDraft.length === libraries.length &&
-      librarySortDraft.some((name, index) => name !== libraries[index]);
+      librarySortDraft.length === selectedDirectoryLibraries.length &&
+      librarySortDraft.some(
+        (name, index) => name !== selectedDirectoryLibraries[index],
+      );
 
     if (!orderChanged) {
       closeLibrarySort();
@@ -515,7 +526,14 @@ function AdminView({ functions, onRefresh }) {
     setLibraryError("");
 
     try {
-      const savedLibraries = await updateLibraryOrder(librarySortDraft);
+      let directoryLibraryIndex = 0;
+      const selectedLibraryNames = new Set(selectedDirectoryLibraries);
+      const completeLibraryOrder = libraries.map((name) =>
+        selectedLibraryNames.has(name)
+          ? librarySortDraft[directoryLibraryIndex++]
+          : name,
+      );
+      const savedLibraries = await updateLibraryOrder(completeLibraryOrder);
       setLibraries(savedLibraries);
       setLibrarySortOpen(false);
       setDraggedLibrary("");
@@ -609,14 +627,16 @@ function AdminView({ functions, onRefresh }) {
           <div>
             <span>FUNCTION LIBRARIES</span>
             <h2>函数库管理</h2>
-            <p>可以新增、删除或调整函数库顺序，排序结果会保存在服务器上。</p>
+            <p>选择目录后，只管理和排序该目录中的函数库。</p>
           </div>
 
           <div className="library-manager-tools">
             <button
               className="library-sort-open-button"
               type="button"
-              disabled={librarySaving || libraries.length < 2}
+              disabled={
+                librarySaving || selectedDirectoryLibraries.length < 2
+              }
               onClick={openLibrarySort}
             >
               <span aria-hidden="true">☷</span>
@@ -628,10 +648,14 @@ function AdminView({ functions, onRefresh }) {
               onSubmit={handleCreateLibrary}
             >
               <select
-                value={newLibraryDirectory}
-                onChange={(event) => setNewLibraryDirectory(event.target.value)}
+                value={selectedLibraryDirectory}
+                onChange={(event) => {
+                  setSelectedLibraryDirectory(event.target.value);
+                  setLibraryMessage("");
+                  setLibraryError("");
+                }}
                 disabled={librarySaving || directories.length === 0}
-                aria-label="新函数库所属目录"
+                aria-label="选择要管理的目录"
               >
                 <option value="" disabled>
                   选择目录
@@ -655,7 +679,7 @@ function AdminView({ functions, onRefresh }) {
                 disabled={
                   librarySaving ||
                   !newLibrary.trim() ||
-                  !newLibraryDirectory
+                  !selectedLibraryDirectory
                 }
               >
                 ＋ 新增函数库
@@ -665,10 +689,14 @@ function AdminView({ functions, onRefresh }) {
         </div>
 
         <div className="library-chip-list">
-          {libraries.length === 0 ? (
+          {directories.length === 0 ? (
+            <p>还没有目录，请先新增一个。</p>
+          ) : selectedDirectoryLibraries.length === 0 ? (
+            <p>“{selectedLibraryDirectory}”目录中还没有函数库。</p>
+          ) : libraries.length === 0 ? (
             <p>还没有函数库，请先新增一个。</p>
           ) : (
-            libraries.map((name) => {
+            selectedDirectoryLibraries.map((name) => {
               const functionCount = functions.filter(
                 (item) => item.library === name,
               ).length;
@@ -737,8 +765,10 @@ function AdminView({ functions, onRefresh }) {
             <header className="library-sort-heading">
               <div>
                 <span>LIBRARY ORDER</span>
-                <h2 id="library-sort-title">调整函数库顺序</h2>
-                <p>按住左侧手柄拖动，全部调整完成后再统一保存。</p>
+                <h2 id="library-sort-title">
+                  调整“{selectedLibraryDirectory}”目录顺序
+                </h2>
+                <p>这里只显示当前目录的函数库，拖动完成后统一保存。</p>
               </div>
               <button
                 className="library-sort-close"
@@ -793,7 +823,7 @@ function AdminView({ functions, onRefresh }) {
                     </span>
                     <strong>{name}</strong>
                     <span className="library-sort-directory">
-                      {libraryDirectoryMap.get(name) || "未分类"}
+                      {selectedLibraryDirectory}
                     </span>
                     <small>{functionCount} 个函数</small>
                   </div>
