@@ -626,6 +626,18 @@ textarea:focus-visible {
   gap: 9px;
 }
 
+.directory-manager-tools {
+  display: flex;
+  flex: 0 1 560px;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.directory-manager-tools .library-create-form {
+  flex: 1 1 360px;
+}
+
 .library-manager-tools .library-create-form {
   flex: 1 1 450px;
 }
@@ -735,27 +747,49 @@ textarea:focus-visible {
 
 .directory-chip {
   display: inline-grid;
-  grid-template-columns: auto auto 26px;
+  grid-template-columns: minmax(0, 1fr) 26px;
   align-items: center;
-  gap: 8px;
-  padding: 7px 7px 7px 12px;
+  gap: 5px;
+  padding: 5px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: #fffefa;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
 }
 
-.directory-chip > span {
+.directory-chip.is-selected {
+  border-color: #8ba49b;
+  background: #edf3f0;
+  box-shadow: 0 0 0 3px rgba(49, 91, 76, 0.08);
+}
+
+.directory-chip-select {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 7px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.directory-chip-select > span {
   color: var(--ink);
   font-size: 12px;
   font-weight: 700;
 }
 
-.directory-chip > small {
+.directory-chip-select > small {
   color: var(--muted);
   font-size: 10px;
 }
 
-.directory-chip > button {
+.directory-delete-button {
   display: grid;
   width: 26px;
   height: 26px;
@@ -770,7 +804,7 @@ textarea:focus-visible {
   line-height: 1;
 }
 
-.directory-chip > button:disabled {
+.directory-delete-button:disabled {
   cursor: not-allowed;
   opacity: 0.38;
 }
@@ -1121,6 +1155,104 @@ textarea:focus-visible {
   margin: -10px 0 24px;
 }
 
+.function-scope-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.25fr) auto;
+  align-items: center;
+  gap: 22px;
+  margin-bottom: 14px;
+  padding: 18px 22px;
+  border: 1px solid rgba(100, 95, 84, 0.2);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(233, 240, 237, 0.9), rgba(255, 253, 248, 0.9));
+}
+
+.function-scope-heading > span {
+  color: var(--orange);
+  font-family: "DM Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+
+.function-scope-heading h2 {
+  margin: 3px 0 4px;
+  font-size: 18px;
+}
+
+.function-scope-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.function-scope-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.function-scope-controls label {
+  display: grid;
+  gap: 6px;
+}
+
+.function-scope-controls label > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.function-scope-controls select {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 34px 11px 12px;
+  border: 1px solid #b9c9c3;
+  border-radius: 11px;
+  outline: 0;
+  color: var(--ink);
+  background: #fffefa;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.function-scope-controls select:focus {
+  border-color: #7e9c90;
+  box-shadow: 0 0 0 3px rgba(49, 91, 76, 0.1);
+}
+
+.function-scope-controls select:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.function-scope-summary {
+  display: flex;
+  min-width: 160px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.function-scope-summary span:first-child,
+.function-scope-summary strong {
+  color: var(--green);
+}
+
+.function-scope-summary strong {
+  font-size: 13px;
+}
+
+.function-scope-summary small {
+  width: 100%;
+  text-align: right;
+}
+
 .admin-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
@@ -1164,6 +1296,46 @@ textarea:focus-visible {
   display: grid;
   grid-template-columns: 0.8fr 1.2fr;
   gap: 13px;
+}
+
+.editor-location {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid #c9d5d0;
+  border-radius: 11px;
+  background: #edf3f0;
+}
+
+.editor-location > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.editor-location > strong {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  color: var(--green);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-location > strong i {
+  color: #9aa8a2;
+  font-style: normal;
+}
+
+.editor-location > small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 400;
 }
 
 .editor-card label {
@@ -1538,6 +1710,26 @@ textarea:focus-visible {
     flex: 1 1 auto;
   }
 
+  .directory-manager-tools {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .function-scope-card {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 1.2fr);
+  }
+
+  .function-scope-summary {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .function-scope-summary small {
+    width: auto;
+    margin-left: auto;
+    text-align: left;
+  }
+
   .data-transfer-actions {
     flex-wrap: wrap;
   }
@@ -1666,6 +1858,11 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .directory-manager-tools {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
   .library-sort-open-button {
     width: 100%;
   }
@@ -1690,6 +1887,14 @@ textarea:focus-visible {
   .library-chip > .library-delete-button {
     grid-column: 3;
     grid-row: 1;
+  }
+
+  .directory-chip {
+    width: 100%;
+  }
+
+  .directory-chip-select {
+    justify-content: space-between;
   }
 
   .library-sort-backdrop {
@@ -1733,6 +1938,24 @@ textarea:focus-visible {
 
   .editor-card {
     padding: 22px 17px;
+  }
+
+  .function-scope-card {
+    grid-template-columns: 1fr;
+    padding: 18px 16px;
+  }
+
+  .function-scope-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .function-scope-summary {
+    grid-column: auto;
+  }
+
+  .function-scope-summary small {
+    width: 100%;
+    margin-left: 0;
   }
 
   .form-row {
