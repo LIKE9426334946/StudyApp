@@ -104,6 +104,16 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   );
   assert.equal(unauthorizedDirectoryResponse.status, 401);
 
+  const unauthorizedDirectoryOrderResponse = await fetch(
+    `${baseUrl}/api/directories/order`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ directories: ["JavaScript", "未分类"] }),
+    },
+  );
+  assert.equal(unauthorizedDirectoryOrderResponse.status, 401);
+
   const wrongLoginResponse = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -172,6 +182,48 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
     name: "Python",
     libraries: [],
   });
+
+  const orderDirectoriesResponse = await authenticatedFetch(
+    `${baseUrl}/api/directories/order`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        directories: ["Python", "JavaScript", "未分类"],
+      }),
+    },
+  );
+  assert.equal(orderDirectoriesResponse.status, 200);
+  assert.deepEqual(
+    (await orderDirectoriesResponse.json()).map(
+      (directory) => directory.name,
+    ),
+    ["Python", "JavaScript", "未分类"],
+  );
+
+  const invalidDirectoryOrderResponse = await authenticatedFetch(
+    `${baseUrl}/api/directories/order`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ directories: ["Python", "JavaScript"] }),
+    },
+  );
+  assert.equal(invalidDirectoryOrderResponse.status, 400);
+
+  const orderedDirectoriesResponse = await fetch(`${baseUrl}/api/directories`);
+  assert.deepEqual(
+    (await orderedDirectoriesResponse.json()).map(
+      (directory) => directory.name,
+    ),
+    ["Python", "JavaScript", "未分类"],
+  );
+  assert.deepEqual(
+    JSON.parse(await fs.readFile(directoriesFile, "utf8")).map(
+      (directory) => directory.name,
+    ),
+    ["Python", "JavaScript", "未分类"],
+  );
 
   const createLibraryResponse = await authenticatedFetch(
     `${baseUrl}/api/libraries`,
