@@ -125,6 +125,13 @@ export function createDirectory(name) {
   });
 }
 
+export function updateDirectoryOrder(directories) {
+  return requestFrom(DIRECTORIES_ENDPOINT, "/order", {
+    method: "PUT",
+    body: JSON.stringify({ directories }),
+  });
+}
+
 export function deleteDirectory(name) {
   return requestFrom(DIRECTORIES_ENDPOINT, `/${encodeURIComponent(name)}`, {
     method: "DELETE",
