@@ -130,6 +130,7 @@ HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm 
 | `DELETE` | `/api/functions/:id` | 登录后删除函数 |
 | `GET` | `/api/directories` | 获取目录及函数库归属 |
 | `POST` | `/api/directories` | 登录后新增目录 |
+| `PUT` | `/api/directories/order` | 登录后保存目录顺序 |
 | `DELETE` | `/api/directories/:name` | 登录后删除目录并将函数库移到“未分类” |
 | `GET` | `/api/libraries` | 获取函数库列表 |
 | `POST` | `/api/libraries` | 登录后新增函数库 |
@@ -153,13 +154,16 @@ HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm 
 已有函数库也可以随时移动到其他目录。删除目录不会删除其中的函数库和函数，
 这些函数库会自动移入“未分类”。“未分类”目录本身不能删除。
 
-添加或修改函数时必须由用户从已有函数库中选择，新增函数后会保留本次选择，
-不会自动切换到其他库。仍然包含函数的函数库不能删除，需要先修改这些函数的
-所属库或删除函数。导入 `functions.json` 时，文件中出现的新函数库会自动加入
+电脑端的添加函数、修改函数和已有函数列表共用同一组“目录 → 函数库”选择；
+选择 `Python` 时，函数库下拉框只会显示 Python 目录中的函数库。目录和函数库
+都可以在独立排序面板中拖拽调整，并在完成后一次保存。仍然包含函数的函数库
+不能删除，需要先修改这些函数的所属库或删除函数。导入 `functions.json` 时，
+文件中出现的新函数库会自动加入
 库列表并分配目录。旧数据首次升级时，`strings`、`list`、`tuple`、`set`、
 `dict`、`NumPy`、`PyTorch` 等常见 Python 函数库会自动归入 `Python`，
 无法判断归属的函数库进入“未分类”。函数库排序结果保存在
-`backend/data/libraries.json`，目录归属保存在 `backend/data/directories.json`。
+`backend/data/libraries.json`，目录顺序和归属保存在
+`backend/data/directories.json`。
 
 手机端首次使用时会从服务器初始化学习内容并保存到当前浏览器。之后打开学习页
 只读取这份缓存，不会自动同步电脑端刚修改的内容；在手机端目录首页点击“刷新”
