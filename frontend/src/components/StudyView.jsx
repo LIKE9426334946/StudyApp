@@ -49,6 +49,8 @@ function StudyView({
   directories: storedDirectories,
   favorites,
   onToggleFavorite,
+  onRefresh,
+  refreshing,
 }) {
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -61,6 +63,8 @@ function StudyView({
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState("");
+  const [refreshError, setRefreshError] = useState("");
 
   const libraryNames = useMemo(
     () => [
@@ -240,6 +244,18 @@ function StudyView({
       setFavoritesOnly(false);
       setExpanded(false);
       setCatalogOpen(false);
+    }
+  }
+
+  async function refreshCatalog() {
+    setRefreshMessage("");
+    setRefreshError("");
+
+    try {
+      await onRefresh();
+      setRefreshMessage("已加载服务器上的最新函数内容。");
+    } catch (requestError) {
+      setRefreshError(requestError.message || "刷新失败，请稍后重试。");
     }
   }
 
@@ -455,10 +471,41 @@ function StudyView({
                   <h2>目录</h2>
                 </div>
               )}
-              <button type="button" onClick={() => setCatalogOpen(false)}>
-                完成
-              </button>
+              <div className="mobile-catalog-header-actions">
+                {!catalogDirectory && !catalogLibrary && (
+                  <button
+                    className="mobile-catalog-refresh"
+                    type="button"
+                    disabled={refreshing}
+                    onClick={refreshCatalog}
+                  >
+                    <span
+                      className={refreshing ? "refreshing" : ""}
+                      aria-hidden="true"
+                    >
+                      ↻
+                    </span>
+                    {refreshing ? "刷新中" : "刷新"}
+                  </button>
+                )}
+                <button type="button" onClick={() => setCatalogOpen(false)}>
+                  完成
+                </button>
+              </div>
             </div>
+
+            {!catalogDirectory &&
+              !catalogLibrary &&
+              (refreshMessage || refreshError) && (
+                <p
+                  className={`mobile-catalog-refresh-status ${
+                    refreshError ? "error" : ""
+                  }`}
+                  role="status"
+                >
+                  {refreshError || refreshMessage}
+                </p>
+              )}
 
             {!catalogDirectory && !catalogLibrary && (
               <label className="mobile-catalog-search">
