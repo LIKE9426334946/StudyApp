@@ -2675,6 +2675,80 @@ textarea:focus-visible {
     box-shadow: 0 0 0 3px rgba(107, 87, 235, 0.08);
   }
 
+  .mobile-catalog-library-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 14px;
+    border: 1px solid #e5e3eb;
+    border-radius: 14px;
+    color: #27262c;
+    background: #fff;
+  }
+
+  .mobile-catalog-library-row.active {
+    border-color: #b9afff;
+    box-shadow: 0 0 0 3px rgba(107, 87, 235, 0.08);
+  }
+
+  .mobile-library-review-button {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    color: #6552dd;
+    background: #ece9ff;
+    cursor: pointer;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 11px;
+    transition:
+      color 160ms ease,
+      background-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 120ms ease;
+  }
+
+  .mobile-library-review-button.reviewed {
+    color: #28724c;
+    background: #dff3e7;
+    box-shadow: inset 0 0 0 1px rgba(40, 114, 76, 0.12);
+  }
+
+  .mobile-library-review-button:active {
+    transform: scale(0.94);
+  }
+
+  .mobile-library-review-button:focus-visible,
+  .mobile-catalog-library-open:focus-visible {
+    outline: 2px solid #6b57eb;
+    outline-offset: 3px;
+  }
+
+  .mobile-catalog-library-open {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) 20px;
+    align-items: center;
+    gap: 12px;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .mobile-catalog-library-open > span:last-child {
+    color: #918caa;
+    font-size: 24px;
+    text-align: right;
+  }
+
   .mobile-catalog-list > button > span:first-child {
     display: grid;
     width: 38px;

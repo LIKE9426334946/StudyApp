@@ -1,5 +1,6 @@
 const FAVORITES_KEY = "studyapp:favorites";
 const STUDY_DATA_KEY = "studyapp:study-data:v1";
+const REVIEWED_LIBRARIES_KEY = "studyapp:reviewed-libraries";
 
 export function loadFavorites() {
   try {
@@ -12,6 +13,28 @@ export function loadFavorites() {
 
 export function saveFavorites(favorites) {
   localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites]));
+}
+
+export function loadReviewedLibraries() {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(REVIEWED_LIBRARIES_KEY) || "[]",
+    );
+    return new Set(
+      Array.isArray(saved)
+        ? saved.filter((name) => typeof name === "string")
+        : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+export function saveReviewedLibraries(libraries) {
+  localStorage.setItem(
+    REVIEWED_LIBRARIES_KEY,
+    JSON.stringify([...libraries]),
+  );
 }
 
 export function loadStudyData() {
@@ -52,4 +75,3 @@ export function saveStudyData(data) {
     return false;
   }
 }
-

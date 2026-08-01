@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  loadReviewedLibraries,
+  saveReviewedLibraries,
+} from "../storage";
 
 function BackIcon() {
   return (
@@ -65,6 +69,9 @@ function StudyView({
   const [copied, setCopied] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState("");
   const [refreshError, setRefreshError] = useState("");
+  const [reviewedLibraries, setReviewedLibraries] = useState(() =>
+    loadReviewedLibraries(),
+  );
 
   const libraryNames = useMemo(
     () => [
@@ -245,6 +252,21 @@ function StudyView({
       setExpanded(false);
       setCatalogOpen(false);
     }
+  }
+
+  function toggleReviewedLibrary(libraryName) {
+    setReviewedLibraries((current) => {
+      const next = new Set(current);
+
+      if (next.has(libraryName)) {
+        next.delete(libraryName);
+      } else {
+        next.add(libraryName);
+      }
+
+      saveReviewedLibraries(next);
+      return next;
+    });
   }
 
   async function refreshCatalog() {
@@ -586,19 +608,39 @@ function StudyView({
               {catalogDirectory &&
                 !catalogLibrary &&
                 catalogLibraries.map((item, itemIndex) => (
-                  <button
-                    className={current?.library === item.name ? "active" : ""}
-                    type="button"
+                  <div
+                    className={`mobile-catalog-library-row ${
+                      current?.library === item.name ? "active" : ""
+                    }`}
                     key={item.name}
-                    onClick={() => setCatalogLibrary(item.name)}
                   >
-                    <span>{String(itemIndex + 1).padStart(2, "0")}</span>
-                    <span>
-                      <strong>{item.name}</strong>
-                      <small>{item.count} 个函数</small>
-                    </span>
-                    <span>›</span>
-                  </button>
+                    <button
+                      className={`mobile-library-review-button ${
+                        reviewedLibraries.has(item.name) ? "reviewed" : ""
+                      }`}
+                      type="button"
+                      aria-label={`${item.name}${
+                        reviewedLibraries.has(item.name)
+                          ? "已复习，点击取消标记"
+                          : "未复习，点击标记为已复习"
+                      }`}
+                      aria-pressed={reviewedLibraries.has(item.name)}
+                      onClick={() => toggleReviewedLibrary(item.name)}
+                    >
+                      {String(itemIndex + 1).padStart(2, "0")}
+                    </button>
+                    <button
+                      className="mobile-catalog-library-open"
+                      type="button"
+                      onClick={() => setCatalogLibrary(item.name)}
+                    >
+                      <span>
+                        <strong>{item.name}</strong>
+                        <small>{item.count} 个函数</small>
+                      </span>
+                      <span>›</span>
+                    </button>
+                  </div>
                 ))}
 
               {catalogDirectory &&
