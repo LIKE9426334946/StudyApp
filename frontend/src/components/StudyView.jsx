@@ -231,6 +231,11 @@ function StudyView({
     setCatalogOpen(true);
   }
 
+  function returnToPreviousCatalogLevel() {
+    setFavoritesOnly(false);
+    setCatalogOpen(true);
+  }
+
   function showFavorites() {
     setCatalogOpen(false);
     setFavoritesOnly(true);
@@ -299,7 +304,11 @@ function StudyView({
         {current ? (
           <>
             <header className="mobile-function-header">
-              <button type="button" aria-label="打开函数目录" onClick={showCatalog}>
+              <button
+                type="button"
+                aria-label="返回上一层"
+                onClick={returnToPreviousCatalogLevel}
+              >
                 <BackIcon />
               </button>
               <strong>{current.library}</strong>
