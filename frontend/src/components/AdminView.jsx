@@ -1407,10 +1407,10 @@ function AdminView({ functions, onRefresh }) {
                     <span>{visibleFunctions.length} 个函数</span>
                   </div>
                   <div className="function-library-items">
-                    {visibleFunctions.map((item) => (
+                    {visibleFunctions.map((item, itemIndex) => (
                       <article className="admin-function-item" key={item.id}>
                         <div className="item-index">
-                          {String(item.id).padStart(2, "0")}
+                          {String(itemIndex + 1).padStart(2, "0")}
                         </div>
                         <div className="item-content">
                           <h3>{item.name}</h3>
