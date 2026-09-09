@@ -7,21 +7,21 @@ export default function BackupPanel({ onRestored, disabled = false }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  async function download(previous = false) {
+  async function download() {
     setBusy(true);
     setMessage("");
     setError("");
     try {
-      const blob = await exportBackup(previous);
+      const blob = await exportBackup();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = previous ? "StudyApp-before-restore.json" : `StudyApp-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      link.download = `StudyApp-backup-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setMessage(previous ? "已下载恢复前的数据备份。" : "完整备份已下载，请妥善保存。");
+      setMessage("已发起下载，请在浏览器下载列表中查看。");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -42,7 +42,7 @@ export default function BackupPanel({ onRestored, disabled = false }) {
       if (backup?.format !== "StudyApp-backup" || backup.version !== 1 || !Array.isArray(backup.functions) || !Array.isArray(backup.libraries) || !Array.isArray(backup.directories)) {
         throw new Error("请选择 StudyApp 完整备份；普通函数 JSON 请使用下方的函数导入。");
       }
-      if (!window.confirm(`将恢复 ${backup.functions.length} 个函数、${backup.libraries.length} 个函数库和 ${backup.directories.length} 个目录，并覆盖当前内容。恢复前会自动保存当前数据。确定恢复吗？`)) return;
+      if (!window.confirm(`将恢复 ${backup.functions.length} 个函数、${backup.libraries.length} 个函数库和 ${backup.directories.length} 个目录，并覆盖当前内容。需要保留当前内容时，请先下载完整备份到电脑。确定恢复吗？`)) return;
       const result = await restoreBackup(backup);
       try {
         await onRestored();
@@ -63,13 +63,12 @@ export default function BackupPanel({ onRestored, disabled = false }) {
         <div>
           <h2>完整备份与恢复</h2>
           <p>保存全部函数、目录、空函数库和排序。收藏与复习标记保存在当前浏览器。</p>
-          <p>恢复前会自动保留一份当前数据；下次恢复或覆盖导入时更新这份备份。</p>
+          <p>备份文件下载到当前设备，服务器不保留备份副本。</p>
         </div>
       </div>
       <div className="backup-actions">
         <button className="primary-button" type="button" disabled={disabled || busy} onClick={() => download()}>下载完整备份</button>
         <button className="secondary-button" type="button" disabled={disabled || busy} onClick={() => input.current?.click()}>恢复完整备份</button>
-        <button className="text-button" type="button" disabled={disabled || busy} onClick={() => download(true)}>下载恢复前备份</button>
         <input ref={input} type="file" accept=".json,application/json" hidden onChange={restore} />
       </div>
       {busy && <p role="status">正在处理，请稍候……</p>}

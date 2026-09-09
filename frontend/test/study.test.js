@@ -6,7 +6,7 @@ import { createElement, act } from "react";
 import { createRoot } from "react-dom/client";
 import { copyText } from "../src/clipboard.js";
 
-let vite, StudyView, AdminView, FunctionDescription, App, dom, root, container;
+let vite, StudyView, AdminView, BackupPanel, FunctionDescription, App, dom, root, container;
 const data = {
   functions: [{ id: 1, library: "Python", name: "python_sample()", description: "Python", code: "print(1)" }, { id: 2, library: "NumPy", name: "numpy_sample()", description: "NumPy", code: "np.array([1])" }],
   libraries: ["Python", "NumPy"],
@@ -18,6 +18,7 @@ before(async () => {
   StudyView = (await vite.ssrLoadModule("/src/components/StudyView.jsx")).default;
   App = (await vite.ssrLoadModule("/src/App.jsx")).default;
   AdminView = (await vite.ssrLoadModule("/src/components/AdminView.jsx")).default;
+  BackupPanel = (await vite.ssrLoadModule("/src/components/BackupPanel.jsx")).default;
   FunctionDescription = (await vite.ssrLoadModule("/src/components/FunctionDescription.jsx")).default;
 });
 after(async () => { await vite.close(); });
@@ -127,4 +128,46 @@ test("admin list and editor preserve the exact description source", async () => 
   await click(buttonText(container, "修改"));
   assert.equal(container.querySelector('textarea[name="description"]').value, description);
   assert.equal(container.querySelector(".katex"), null);
+});
+
+test("complete backup is delivered to the browser as a named JSON download", async () => {
+  const backup = { format: "StudyApp-backup", version: 1, ...data };
+  const requests = [];
+  const downloads = [];
+  const revoked = [];
+  const timers = [];
+  let downloadedBlob;
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return new Response(JSON.stringify(backup), { headers: { "Content-Type": "application/json" } });
+  };
+  const originalCreate = URL.createObjectURL;
+  const originalRevoke = URL.revokeObjectURL;
+  const originalClick = dom.window.HTMLAnchorElement.prototype.click;
+  const originalTimeout = window.setTimeout;
+  URL.createObjectURL = (blob) => { downloadedBlob = blob; return "blob:studyapp-backup"; };
+  URL.revokeObjectURL = (url) => revoked.push(url);
+  window.setTimeout = (callback) => { timers.push(callback); return timers.length; };
+  dom.window.HTMLAnchorElement.prototype.click = function () {
+    downloads.push({ href: this.href, filename: this.download });
+  };
+  try {
+    await act(() => root.render(createElement(BackupPanel, { onRestored: async () => {} })));
+    await click(buttonText(container, "下载完整备份"));
+    assert.deepEqual(requests, [{ url: "api/backup", options: { cache: "no-store" } }]);
+    assert.equal(downloads.length, 1);
+    assert.equal(downloads[0].href, "blob:studyapp-backup");
+    assert.match(downloads[0].filename, /^StudyApp-backup-\d{4}-\d{2}-\d{2}\.json$/);
+    assert.deepEqual(JSON.parse(await downloadedBlob.text()), backup);
+    assert.equal(document.querySelector("a[download]"), null);
+    assert.match(container.textContent, /浏览器下载列表/);
+    assert.equal(buttonText(container, "下载恢复前备份"), undefined);
+    timers.forEach((callback) => callback());
+    assert.deepEqual(revoked, ["blob:studyapp-backup"]);
+  } finally {
+    URL.createObjectURL = originalCreate;
+    URL.revokeObjectURL = originalRevoke;
+    dom.window.HTMLAnchorElement.prototype.click = originalClick;
+    window.setTimeout = originalTimeout;
+  }
 });

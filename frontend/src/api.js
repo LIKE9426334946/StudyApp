@@ -159,8 +159,8 @@ export function getStudyData() {
   return requestFrom("api/study-data", "", { cache: "no-store" });
 }
 
-export async function exportBackup(previous = false) {
-  const response = await fetch(`api/backup${previous ? "/previous" : ""}`, { cache: "no-store" });
+export async function exportBackup() {
+  const response = await fetch("api/backup", { cache: "no-store" });
   if (!response.ok) {
     notifyUnauthorized(response);
     const data = await response.json().catch(() => null);

@@ -38,6 +38,38 @@ async function fixture(t) {
   return { options, request, restart: async () => { await stop(); await start(); } };
 }
 
+async function filesInDataDirectory(options) {
+  const dir = path.dirname(options.dataFile);
+  const names = (await fs.readdir(dir)).sort();
+  return Object.fromEntries(await Promise.all(names.map(async (name) => [name, await fs.readFile(path.join(dir, name), "utf8")])));
+}
+
+async function assertOnlyDataFiles(options) {
+  assert.deepEqual(Object.keys(await filesInDataDirectory(options)), ["directories.json", "functions.json", "libraries.json", "sessions.json"]);
+}
+
+test("complete backup downloads an attachment without creating or changing server files", async (t) => {
+  const { options, request } = await fixture(t);
+  for (const missingCatalog of [false, true]) {
+    if (missingCatalog) {
+      await fs.unlink(options.librariesFile);
+      await fs.unlink(options.directoriesFile);
+    }
+    const before = await filesInDataDirectory(options);
+    const response = await request("/api/backup");
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-disposition"), /attachment;.*StudyApp-backup\.json/);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("x-accel-buffering"), "no");
+    const backup = await response.json();
+    assert.equal(backup.format, "StudyApp-backup");
+    assert.equal(backup.functions[0].id, 1);
+    assert.ok(backup.libraries.includes("Python"));
+    assert.ok(backup.directories.some((directory) => directory.libraries.includes("Python")));
+    assert.deepEqual(await filesInDataDirectory(options), before);
+  }
+});
+
 test("parallel saves preserve every record; IDs survive deletion and restart without reuse", async (t) => {
   const f = await fixture(t);
   const results = await Promise.all(Array.from({ length: 12 }, (_, i) => f.request("/api/functions", "POST", example(`parallel-${i}`))));
@@ -57,7 +89,7 @@ test("parallel saves preserve every record; IDs survive deletion and restart wit
 });
 
 test("import canonicalizes library names and never reuses imported numeric IDs", async (t) => {
-  const { request } = await fixture(t);
+  const { request, options } = await fixture(t);
   const response = await request("/api/functions/import?mode=append", "POST", [{ id: Number.MAX_VALUE, ...example("lowercase", "numpy") }]);
   assert.equal(response.status, 200);
   const data = await response.json();
@@ -66,15 +98,15 @@ test("import canonicalizes library names and never reuses imported numeric IDs",
   assert.equal(new Set(data.functions.map((item) => item.id)).size, 2);
   const replaced = await (await request("/api/functions/import?mode=replace", "POST", [{ id: 1, ...example("replacement") }])).json();
   assert.notEqual(replaced.functions[0].id, 1);
-  const previous = await (await request("/api/backup/previous")).json();
-  assert.equal(previous.functions.length, 2);
+  await assertOnlyDataFiles(options);
 });
 
 test("complete backup restores empty libraries/directories, order and IDs; invalid backups do not write", async (t) => {
-  const { request } = await fixture(t);
+  const { request, options } = await fixture(t);
   assert.equal((await request("/api/backup", "GET", undefined, false)).status, 401);
   assert.equal((await request("/api/backup/restore", "POST", {}, false)).status, 401);
   assert.equal((await request("/api/backup/previous", "GET", undefined, false)).status, 401);
+  assert.equal((await request("/api/backup/previous")).status, 410);
   const backup = await (await request("/api/backup")).json();
   await request("/api/functions", "POST", example("extra"));
   await request("/api/libraries/order", "PUT", { libraries: ["Empty", "NumPy", "Python"] });
@@ -86,8 +118,7 @@ test("complete backup restores empty libraries/directories, order and IDs; inval
   assert.equal((await request("/api/backup/restore", "POST", backup)).status, 200);
   const restored = await (await request("/api/study-data")).json();
   for (const field of ["functions", "libraries", "directories"]) assert.deepEqual(restored[field], backup[field]);
-  const previous = await (await request("/api/backup/previous")).json();
-  for (const field of ["functions", "libraries", "directories"]) assert.deepEqual(previous[field], beforeRestore[field]);
+  await assertOnlyDataFiles(options);
 });
 
 test("restart recovers an interrupted multi-file restore before serving any data", async (t) => {

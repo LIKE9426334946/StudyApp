@@ -285,7 +285,7 @@ async function readStoredLibraries(librariesFile) {
   }
 }
 
-async function readLibraries(librariesFile, dataFile) {
+async function readLibraries(librariesFile, dataFile, { persist = true } = {}) {
   const [storedLibraries, functions] = await Promise.all([
     readStoredLibraries(librariesFile),
     readFunctions(dataFile),
@@ -295,7 +295,7 @@ async function readLibraries(librariesFile, dataFile) {
     ...functions.map((item) => item.library),
   ]);
 
-  if (JSON.stringify(libraries) !== JSON.stringify(storedLibraries)) {
+  if (persist && JSON.stringify(libraries) !== JSON.stringify(storedLibraries)) {
     await writeLibraries(librariesFile, libraries);
   }
 
@@ -307,14 +307,14 @@ function findLibrary(libraries, requestedName) {
   return libraries.find((name) => name.toLocaleLowerCase() === key);
 }
 
-async function readDirectories(directoriesFile, librariesFile, dataFile) {
+async function readDirectories(directoriesFile, librariesFile, dataFile, { persist = true } = {}) {
   const [storedDirectories, libraries] = await Promise.all([
     readStoredDirectories(directoriesFile),
-    readLibraries(librariesFile, dataFile),
+    readLibraries(librariesFile, dataFile, { persist }),
   ]);
   const directories = reconcileDirectories(storedDirectories, libraries);
 
-  if (JSON.stringify(directories) !== JSON.stringify(storedDirectories)) {
+  if (persist && JSON.stringify(directories) !== JSON.stringify(storedDirectories)) {
     await writeDirectories(directoriesFile, directories);
   }
 
@@ -453,13 +453,12 @@ function createApp(options = {}) {
 
   const app = express();
   const journalFile = `${dataFile}.restore-journal.json`;
-  const previousBackupFile = `${dataFile}.before-restore.json`;
   const snapshots = snapshotStore({ functions: dataFile, libraries: librariesFile, directories: directoriesFile }, journalFile);
   const api = queuedRoutes(app, snapshots.recover);
 
-  async function currentSnapshot() {
-    const libraries = await readLibraries(librariesFile, dataFile);
-    const directories = await readDirectories(directoriesFile, librariesFile, dataFile);
+  async function currentSnapshot({ persist = true } = {}) {
+    const libraries = await readLibraries(librariesFile, dataFile, { persist });
+    const directories = await readDirectories(directoriesFile, librariesFile, dataFile, { persist });
     const functions = await readFunctions(dataFile);
     return { format: "StudyApp-backup", version: 1, exportedAt: new Date().toISOString(), functions, libraries, directories };
   }
@@ -467,8 +466,10 @@ function createApp(options = {}) {
   function sendBackup(res, snapshot, filename) {
     const content = `${JSON.stringify(snapshot, null, 2)}\n`;
     if (Buffer.byteLength(content, "utf8") > MAX_JSON_FILE_SIZE) {
-      return res.status(413).json({ message: "完整备份超过 50MB，请直接备份服务器数据目录" });
+      return res.status(413).json({ message: "完整备份超过 50MB，暂时无法通过网页下载" });
     }
+    // Generate the download in memory and prevent Nginx from buffering it to disk.
+    res.set("X-Accel-Buffering", "no");
     res.attachment(filename).type("application/json").send(content);
   }
 
@@ -616,17 +617,12 @@ function createApp(options = {}) {
 
   api.get("/api/backup", requireAdmin, async (req, res) => {
     res.set("Cache-Control", "no-store");
-    sendBackup(res, await currentSnapshot(), "StudyApp-backup.json");
+    sendBackup(res, await currentSnapshot({ persist: false }), "StudyApp-backup.json");
   });
 
-  api.get("/api/backup/previous", requireAdmin, async (req, res) => {
+  api.get("/api/backup/previous", requireAdmin, (req, res) => {
     res.set("Cache-Control", "no-store");
-    try {
-      sendBackup(res, JSON.parse(await fsp.readFile(previousBackupFile, "utf8")), "StudyApp-before-restore.json");
-    } catch (error) {
-      if (error.code === "ENOENT") return res.status(404).json({ message: "还没有恢复前备份" });
-      throw error;
-    }
+    res.status(410).json({ message: "已停用服务器备份，请使用下载到电脑的完整备份。" });
   });
 
   api.post("/api/backup/restore", requireAdmin, async (req, res) => {
@@ -665,7 +661,6 @@ function createApp(options = {}) {
       item.library = library;
     }
     const restored = { functions, libraries, directories: reconcileDirectories(directories, libraries) };
-    await writeJson(previousBackupFile, await currentSnapshot());
     await snapshots.commit(restored);
     res.json({ message: `已恢复 ${functions.length} 个函数、${libraries.length} 个函数库和 ${directories.length} 个目录。`, count: functions.length });
   });
@@ -714,7 +709,6 @@ function createApp(options = {}) {
       for (const item of importedFunctions) item.library = findLibrary(libraries, item.library);
       const functions = mode === "append" ? [...previous.functions, ...importedFunctions] : importedFunctions;
       const directories = reconcileDirectories(previous.directories, libraries);
-      if (mode === "replace") await writeJson(previousBackupFile, previous);
       await snapshots.commit({ functions, libraries, directories });
 
       return res.json({

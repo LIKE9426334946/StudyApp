@@ -312,7 +312,7 @@ function AdminView({ functions, onRefresh }) {
       const confirmed = window.confirm(
         importMode === "append"
           ? `将保留当前 ${functions.length} 个函数，并新增文件中的 ${importedData.length} 个函数，确定继续吗？`
-          : `将用文件中的 ${importedData.length} 个函数覆盖当前 ${functions.length} 个函数，确定继续吗？`,
+          : `将用文件中的 ${importedData.length} 个函数覆盖当前 ${functions.length} 个函数。需要保留当前内容时，请先下载完整备份到电脑。确定继续吗？`,
       );
 
       if (!confirmed) return;
