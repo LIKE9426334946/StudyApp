@@ -386,9 +386,6 @@ function StudyView({
                   </h2>
                   <FunctionDescription text={current.description} />
 
-                  <h3>语法</h3>
-                  <div className="mobile-syntax-box">{current.name}</div>
-
                   <h3>参数</h3>
                   <p className="mobile-parameter-text">
                     {current.parameters || "这个函数暂时没有填写参数说明。"}
