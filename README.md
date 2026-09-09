@@ -1,294 +1,190 @@
-# StudyApp
-开发默认端口 3000；标准部署示例使用公网 16010 → 内部 3010。
+# StudyApp 部署说明
 
-一个个人使用的代码函数学习网站 MVP。
+本文对应当前 `main` 分支，使用 Ubuntu、root 用户和 Node.js + Nginx + systemd 部署。
+前端构建后由 Express 提供页面和 API，数据保存在服务器 JSON 文件中，只运行一个 Node.js 服务实例。
 
-- 手机端学习页：按“目录 → 函数库 → 函数”三级结构浏览，搜索函数、展开解释和代码、切换学习卡片，并使用浏览器本地缓存和收藏。
-- 电脑端管理页：使用固定账号登录后，添加、修改、删除、查看函数，管理目录与函数库，以及导入和导出函数 JSON、完整备份与恢复。
-- 数据保存：函数位于 `backend/data/functions.json`，函数库位于 `backend/data/libraries.json`，目录与函数库归属位于 `backend/data/directories.json`。
-- 技术栈：React + Vite、Node.js + Express。
+## 部署配置
 
-## 项目结构
+| 项目 | 配置 |
+| --- | --- |
+| 项目目录 | `/opt/StudyApp` |
+| Git 分支 | `main` |
+| 公网访问地址 | `http://服务器IP:16000/` |
+| Nginx 对外监听 | `16000` |
+| Node.js 内部监听 | `127.0.0.1:3000` |
+| systemd 服务 | `StudyApp.service` |
+| 服务配置文件 | `/etc/systemd/system/StudyApp.service` |
+| Nginx 配置文件 | `/etc/nginx/sites-available/StudyApp` |
+| 管理账号配置 | `/opt/StudyApp/backend/.env` |
 
-```text
-StudyApp/
-├── frontend/                 # React 前端
-│   ├── src/
-│   │   ├── components/
-│   │   ├── App.jsx
-│   │   └── styles.css
-│   └── package.json
-├── backend/                  # Express 后端
-│   ├── data/functions.json   # 函数数据
-│   ├── data/libraries.json   # 函数库列表
-│   ├── data/directories.json # 目录及函数库归属
-│   ├── src/app.js
-│   ├── test/api.test.js
-│   └── server.js
-└── package.json
+请求通过 Nginx 的 `16000` 端口转发到 `127.0.0.1:3000`。Node.js 仅监听本机地址。
+部署模板在 [deploy/StudyApp.service](deploy/StudyApp.service) 和
+[deploy/StudyApp.nginx.conf](deploy/StudyApp.nginx.conf) 中，包含自动重启、代理请求头和 WebSocket 转发配置。
+
+## 首次部署
+
+### 1. 安装运行环境
+
+以下命令全部以 root 执行。当前依赖要求 Node.js 至少为 `22.12.0`，本部署使用 Node.js 22，
+仓库的 `.nvmrc` 与之保持一致。已有符合要求的 Node.js 22 或 24 时，可跳过 Node.js 安装。
+
+```bash
+apt update
+apt install -y git curl ca-certificates nginx nano
 ```
 
-## 环境要求
+按照 [NodeSource 安装说明](https://github.com/nodesource/distributions/blob/master/DEV_README.md#installation-instructions-deb)安装 Node.js 22：
 
-- Node.js 20.19 或更高版本
-- npm 10 或更高版本
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x -o /tmp/studyapp-nodesource-setup.sh
+bash /tmp/studyapp-nodesource-setup.sh
+apt install -y nodejs
+```
 
-查看版本：
+确认 npm 和 systemd 使用的 Node.js 均已安装：
 
 ```bash
 node -v
 npm -v
+/usr/bin/node -v
 ```
 
-## 第一次安装
+服务模板使用 `/usr/bin/node`。如果 Node.js 安装在其他位置，将
+`deploy/StudyApp.service` 的 `ExecStart` 中解释器路径改为该可执行文件的绝对路径，再安装服务。
 
-在项目根目录执行：
-
-```bash
-npm run setup
-```
-
-该命令会分别安装前端和后端依赖。
-
-## 本地开发
-
-打开第一个终端，启动后端：
-
-```bash
-STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm run dev --prefix backend
-```
-
-后端地址：
-
-```text
-http://127.0.0.1:3000
-```
-
-打开第二个终端，启动前端：
-
-```bash
-npm run dev --prefix frontend
-```
-
-浏览器访问：
-
-```text
-http://127.0.0.1:5173
-```
-
-Vite 会把 `/api` 请求代理到 `127.0.0.1:3000`。
-
-## 运行测试
-
-```bash
-npm test
-```
-
-测试使用临时 JSON 文件和模拟浏览器存储，覆盖目录、函数、备份恢复、并行保存、旧缓存迁移、收藏和复制降级。无需先构建前端，也不会修改正式数据。
-
-## 生产构建
-
-先构建前端：
-
-```bash
-npm run build
-```
-
-然后启动后端：
-
-```bash
-STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm start
-```
-
-构建完成后，Express 会同时提供 API 和前端静态页面，因此只需要启动一个
-Node.js 进程。访问：
-
-```text
-http://127.0.0.1:3000
-```
-
-可通过环境变量修改监听地址和端口：
-
-```bash
-HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm start
-```
-
-## API
-
-| 方法 | 地址 | 用途 |
-| --- | --- | --- |
-| `GET` | `/api/health` | 健康检查 |
-| `POST` | `/api/auth/login` | 登录固定管理账号 |
-| `GET` | `/api/auth/session` | 检查当前登录状态 |
-| `POST` | `/api/auth/logout` | 退出当前管理账号 |
-| `GET` | `/api/study-data` | 一次读取一致的函数、函数库与目录快照 |
-| `GET` | `/api/backup` | 登录后下载完整备份 |
-| `GET` | `/api/backup/previous` | 登录后下载恢复／覆盖导入前的自动备份 |
-| `POST` | `/api/backup/restore` | 登录后校验并恢复完整备份 |
-| `GET` | `/api/functions` | 获取函数列表 |
-| `GET` | `/api/functions/export` | 登录后下载 `functions.json` |
-| `POST` | `/api/functions/import?mode=append` | 登录后保留现有数据并新增导入 |
-| `POST` | `/api/functions/import?mode=replace` | 登录后覆盖导入全部函数 |
-| `POST` | `/api/functions` | 登录后添加函数 |
-| `PUT` | `/api/functions/:id` | 登录后修改函数 |
-| `DELETE` | `/api/functions/:id` | 登录后删除函数 |
-| `GET` | `/api/directories` | 获取目录及函数库归属 |
-| `POST` | `/api/directories` | 登录后新增目录 |
-| `PUT` | `/api/directories/order` | 登录后保存目录顺序 |
-| `DELETE` | `/api/directories/:name` | 登录后删除目录并将函数库移到“未分类” |
-| `GET` | `/api/libraries` | 获取函数库列表 |
-| `POST` | `/api/libraries` | 登录后新增函数库 |
-| `PUT` | `/api/libraries/order` | 登录后保存函数库顺序 |
-| `PUT` | `/api/libraries/:name/directory` | 登录后修改函数库所属目录 |
-| `DELETE` | `/api/libraries/:name` | 登录后删除空函数库 |
-
-管理界面只支持项目内置的一个固定账号，不提供注册或创建账号功能。登录成功后，
-服务器通过 `HttpOnly` Cookie 保存会话，有效期为 30 天。会话数据会自动写入
-`backend/data/admin-sessions.json`；该运行时文件已加入 `.gitignore`，不会提交
-到 Git 仓库。用户名默认为 `noart`，管理密码必须通过
-`STUDYAPP_ADMIN_PASSWORD` 环境变量提供，不会写入源码或 Git 历史。
-
-管理页面中的“导出 functions.json”只导出函数内容，不包含目录和排序。导入时可以选择
-“新增到现有数据”或“覆盖现有数据”：新增模式会保留原有函数并为导入函数
-重新分配 ID，覆盖模式会替换服务器上的全部函数并分配新 ID。两种方式都会先检查 JSON
-格式并要求确认。导入文件必须是 JSON 数组，导入和导出的单个
-`functions.json` 文件最大为 50MB。
-
-目录和函数库均可在管理页面中新增或删除；创建函数库时需要选择所属目录，
-已有函数库也可以随时移动到其他目录。删除目录不会删除其中的函数库和函数，
-这些函数库会自动移入“未分类”。“未分类”目录本身不能删除。
-
-电脑端的添加函数、修改函数和已有函数列表共用同一组“目录 → 函数库”选择；
-选择 `Python` 时，函数库下拉框只会显示 Python 目录中的函数库。目录和函数库
-都可以在独立排序面板中拖拽调整，并在完成后一次保存。仍然包含函数的函数库
-不能删除，需要先修改这些函数的所属库或删除函数。导入 `functions.json` 时，
-文件中出现的新函数库会自动加入
-库列表并分配目录。旧数据首次升级时，`strings`、`list`、`tuple`、`set`、
-`dict`、`NumPy`、`PyTorch` 等常见 Python 函数库会自动归入 `Python`，
-无法判断归属的函数库进入“未分类”。函数库排序结果保存在
-`backend/data/libraries.json`，目录顺序和归属保存在
-`backend/data/directories.json`。
-
-手机端首次使用时会从服务器初始化学习内容并保存到当前浏览器。之后打开学习页
-只读取这份缓存，不会自动同步电脑端刚修改的内容；在手机端目录首页点击“刷新”
-后，才会重新读取服务器上的函数、函数库和目录并替换本地缓存。电脑学习页也提供
-手动刷新按钮；两端显示“上次刷新”时间。旧缓存的时间显示“尚未记录”，第一次刷新后记录。
-
-学习内容优先存入 IndexedDB，旧 localStorage 缓存会自动迁移，迁移成功前保留旧副本。
-IndexedDB 不可用时会尝试 localStorage；两者都无法保存时会明确提示，本次仍可学习新内容，
-重新打开可能读取旧缓存。收藏和复习标记仍保存在原来的 localStorage 中，存储失败时也会提示。
-手机端点击“收藏”会清除函数库和搜索筛选，显示全部收藏。HTTP 页面复制代码会尝试兼容的
-文本选择复制方式；浏览器仍禁止复制时，会提示长按代码手动复制。
-
-## 函数介绍的文字与公式格式
-
-管理端输入框和函数列表始终显示原文，服务器与备份也保存原始内容。
-手机端和电脑端学习页中的函数介绍显示渲染后的样式：
-
-- 左右各一个反引号：`` `重点文字` `` → 加粗显示。
-- 左右各一个美元符号：`$y=a^3$` → 显示行内 LaTeX 公式。
-- 可在同一段中混用，也保留原文换行；例如 `平方函数：$y=x^2$`。
-- 要显示普通反引号或美元符号，在符号前加反斜线，例如 `\$`。
-- 符号未成对或公式有误时保留原文，不影响其他内容显示。
-
-例如在函数介绍中填写：
-
-```text
-这是一个`立方函数`，它的表达式是 $y=a^3$。
-分数公式：$\frac{a+b}{c}$。
-```
-
-公式字体随前端一起构建，不依赖外部 CDN。长公式可在公式区域横向滚动。
-本功能仅作用于函数介绍；参数说明、代码示例和运行结果保持原来的显示方式。
-
-## 完整备份、恢复与数据兼容
-
-管理页“完整备份与恢复”提供三个按钮：
-
-- 下载完整备份：保存所有函数、函数库（包含空库）、目录（包含空目录）、归属和排序。
-- 恢复完整备份：检查格式、ID 和目录归属，确认后覆盖当前内容。手机端随后需手动刷新。
-- 下载恢复前备份：取回上次恢复或覆盖导入前自动保存的数据，可再通过“恢复完整备份”恢复。
-
-完整备份使用 `{ "format": "StudyApp-backup", "version": 1, "exportedAt": "...", "functions": [], "libraries": [], "directories": [] }` 格式，最大 50MB。
-不会导出管理密码、登录会话、浏览器收藏或复习标记。自动备份仅保留最近一份，
-保存在 `backend/data/functions.json.before-restore.json`，建议将重要备份下载到其他设备。
-
-现有函数的数字 ID 保持不变，因此升级后原有收藏仍可使用。新建及普通 JSON 导入的函数
-使用 UUID，删除后不会复用旧 ID。普通“覆盖导入”会生成新的 ID，不继承旧函数收藏；
-要恢复原有身份、目录与排序，应使用完整备份。完整备份恢复会保留函数 ID。
-导入时会将 `numpy` 等名称统一成已有函数库的实际拼写，如 `NumPy`。
-
-后端按顺序处理完整 API 操作，并为每次 JSON 写入使用独立临时文件。
-恢复／导入涉及多个 JSON 文件时，先写入恢复日志，再提交各文件；若进程中断，
-重启后下一次 API 请求会先完成恢复。恢复日志 `functions.json.restore-journal.json`
-及自动备份均不提交到 Git。仍然只运行一个 Node.js 服务实例。
-
-## 标准部署（按 Development.MD）
-
-环境为 Ubuntu，使用 root，项目路径 `/opt/StudyApp`，不需要 sudo。
-仓库提供 `deploy/StudyApp.service` 与 `deploy/StudyApp.nginx.conf`。
-新部署示例使用公网 16010、内部 3010，Node.js 仅监听 127.0.0.1，Nginx 同时支持 `/` 和旧 `/blog/` 入口。
-
-创建项目并安装构建：
+### 2. 获取源码并构建
 
 ```bash
 mkdir -p /opt/StudyApp
-git clone https://github.com/LIKE9426334946/StudyApp.git /opt/StudyApp
+git clone --branch main https://github.com/LIKE9426334946/StudyApp.git /opt/StudyApp
 cd /opt/StudyApp
 npm run setup
-npm test
 npm run build
 ```
 
-创建 `/opt/StudyApp/backend/.env`，填写管理密码（该文件已被 Git 忽略）：
+`npm run setup` 根据锁文件安装前后端依赖；`npm run build` 生成 `frontend/dist`。
+后续启动 Express 即可提供完整网站，生产部署无需启动 Vite 开发服务器。
+目录中已有仓库时，使用下方“更新部署”步骤。
+
+### 3. 设置管理账号
+
+```bash
+cd /opt/StudyApp
+touch backend/.env
+chmod 600 backend/.env
+nano backend/.env
+```
+
+填写以下内容，并将密码替换成你自己的密码：
 
 ```ini
+STUDYAPP_ADMIN_USERNAME=noart
 STUDYAPP_ADMIN_PASSWORD='请替换为你的管理密码'
 ```
 
-安装并启用服务：
+此文件由 systemd 的 `EnvironmentFile` 读取，已被 Git 忽略。该文件只填写账号配置，
+不要另外设置 `HOST` 或 `PORT`，以免覆盖服务模板中的 `127.0.0.1:3000`。
+手机学习页直接访问；电脑端点击“管理”，使用这里设置的账号登录。
+
+### 4. 安装并启动 systemd 服务
 
 ```bash
+cd /opt/StudyApp
 cp deploy/StudyApp.service /etc/systemd/system/StudyApp.service
 systemctl daemon-reload
 systemctl enable --now StudyApp
 systemctl status StudyApp --no-pager
 ```
 
-安装 Nginx 独立配置。先确认 16010 没有被其他 server 配置占用；已有相同端口配置时，
-合并或替换原 StudyApp 配置，避免同一端口出现冲突。
+服务以 root 运行，工作目录为 `/opt/StudyApp`，设置 `NODE_ENV=production`、
+`HOST=127.0.0.1`、`PORT=3000`，开机自启，异常退出后自动重启。
 
-```bash
-cp deploy/StudyApp.nginx.conf /etc/nginx/sites-available/StudyApp
-ln -s /etc/nginx/sites-available/StudyApp /etc/nginx/sites-enabled/StudyApp
-nginx -t
-systemctl reload nginx
-```
-
-访问 `http://服务器IP:16010/` 或 `http://服务器IP:16010/blog/`。
-
-## 已有安装更新
-
-本次功能更新可以沿用现有 systemd、Nginx 和访问地址，不需要为使用新功能切换端口。
-先备份 `backend/data`，再更新源码、安装依赖、运行测试并构建：
+### 5. 安装并启用 Nginx 配置
 
 ```bash
 cd /opt/StudyApp
-cp -a backend/data "/opt/StudyApp-data-backup-$(date +%Y%m%d-%H%M%S)"
-git pull --ff-only origin main
-npm run setup
-npm test
-npm run build
+cp deploy/StudyApp.nginx.conf /etc/nginx/sites-available/StudyApp
+ln -sfn /etc/nginx/sites-available/StudyApp /etc/nginx/sites-enabled/StudyApp
+nginx -t
+systemctl enable --now nginx
+systemctl reload nginx
 ```
 
-随后重启现有服务：旧安装通常是 `systemctl restart studyapp`，按上述标准配置的新安装是
-`systemctl restart StudyApp`。不要同时启动两个服务实例。
-若 git pull 提示本地数据文件冲突，请保留刚才的数据备份并处理冲突，不要强制覆盖学习资料。
-重新加载网页以使用新前端；手机端目录首页仍需点击“刷新”才会同步服务器内容。
+确认 `nginx -t` 通过后再启动或重载。`16000` 端口只启用一份 StudyApp 配置；
+如果该端口已有 StudyApp 的 Nginx 配置，请替换对应配置，避免重复启用。
 
-## 当前版本限制
+在云服务器安全组中放行入站 TCP `16000`。如果服务器已启用 UFW，再执行：
 
-- 只有一个固定管理账号，不支持注册、多账号或分级权限。
-- JSON 文件适合个人使用；请求队列限定于单个 Node.js 进程。
-- 收藏与复习标记只保存在当前浏览器，清理网站数据会删除这些标记。
-- 学习内容缓存不包含应用页面本身；本项目不提供完整的离线网页启动能力。
+```bash
+ufw allow 16000/tcp
+```
+
+### 6. 检查访问
+
+在服务器上分别检查 Node.js 和 Nginx：
+
+```bash
+curl --fail http://127.0.0.1:3000/api/health
+curl --fail http://127.0.0.1:16000/api/health
+```
+
+两次都应返回包含 `"ok":true` 的 JSON。然后在电脑或手机浏览器访问：
+
+```text
+http://服务器IP:16000/
+```
+
+## 更新部署
+
+更新前在管理页面下载“完整备份”，保留当前函数、函数库、目录和排序。
+按顺序执行以下命令；某一步报错时先处理该错误，再继续下一步：
+
+```bash
+cd /opt/StudyApp
+git pull --ff-only origin main
+npm run setup
+npm run build
+cp deploy/StudyApp.service /etc/systemd/system/StudyApp.service
+cp deploy/StudyApp.nginx.conf /etc/nginx/sites-available/StudyApp
+ln -sfn /etc/nginx/sites-available/StudyApp /etc/nginx/sites-enabled/StudyApp
+nginx -t
+systemctl daemon-reload
+systemctl restart StudyApp
+systemctl reload nginx
+curl --fail http://127.0.0.1:16000/api/health
+```
+
+保留 `backend/.env` 中的管理账号配置。如果使用了自定义 Node.js 绝对路径，
+复制服务模板前同步该路径。遇到 `git pull` 的数据文件冲突时，先保留 `backend/data`，
+处理冲突后再继续，不要用仓库中的示例数据覆盖自己的学习内容。
+
+部署完成后重新加载网页。手机端目录中的“刷新”用于同步服务器学习内容；
+不点击时会继续使用本机保存的内容。
+
+## 数据与备份
+
+| 文件 | 内容 |
+| --- | --- |
+| `backend/data/functions.json` | 函数、介绍、参数、代码与运行结果 |
+| `backend/data/libraries.json` | 函数库及顺序 |
+| `backend/data/directories.json` | 目录、函数库归属及顺序 |
+| `backend/data/admin-sessions.json` | 管理登录会话，由运行中的服务生成 |
+
+管理页面的“完整备份”可以下载和恢复学习内容，保持函数 ID、目录和排序。
+浏览器收藏与复习标记保存在各设备本地，不包含在服务器完整备份中。
+管理账号配置保存在 `backend/.env`，重新部署时需要单独保留该文件。
+
+## 日常管理
+
+按需要单独执行以下命令：
+
+```bash
+systemctl status StudyApp --no-pager
+systemctl restart StudyApp
+systemctl stop StudyApp
+journalctl -u StudyApp -n 100 --no-pager
+nginx -t
+```
+
+需要检查代码时，在 `/opt/StudyApp` 执行 `npm test`。测试使用临时数据和模拟浏览器存储，
+不会修改正式学习资料。
