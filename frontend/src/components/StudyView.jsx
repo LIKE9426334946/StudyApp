@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { copyText } from "../clipboard";
+import FunctionDescription from "./FunctionDescription";
 import {
   loadReviewedLibraries,
   saveReviewedLibraries,
@@ -383,7 +384,7 @@ function StudyView({
                     <span className="mobile-section-icon">▣</span>
                     函数解释
                   </h2>
-                  <p>{current.description}</p>
+                  <FunctionDescription text={current.description} />
 
                   <h3>语法</h3>
                   <div className="mobile-syntax-box">{current.name}</div>
@@ -802,7 +803,7 @@ function StudyView({
                       <span>01</span>
                       函数介绍
                     </h3>
-                    <p>{current.description}</p>
+                    <FunctionDescription text={current.description} />
                   </section>
 
                   <section>

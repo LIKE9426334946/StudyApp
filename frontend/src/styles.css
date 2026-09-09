@@ -421,7 +421,8 @@ textarea:focus-visible {
   font-size: 10px;
 }
 
-.details p {
+.details p,
+.details .function-description {
   margin: 0;
   color: #505550;
   line-height: 1.85;
@@ -2822,4 +2823,50 @@ textarea:focus-visible {
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+
+.function-description {
+  min-width: 0;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.85;
+}
+
+.function-description strong {
+  font-weight: 700;
+}
+
+.description-math {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.2em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.description-math .katex {
+  font-size: 1.1em;
+}
+
+.description-math-error {
+  color: #a14a20;
+}
+
+.description-format-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  font-weight: 400;
+}
+
+@media (max-width: 700px) {
+  .mobile-detail-section > .function-description {
+    color: #292934;
+    font-size: 14px;
+  }
 }

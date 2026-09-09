@@ -1294,10 +1294,14 @@ function AdminView({ functions, onRefresh }) {
               name="description"
               value={form.description}
               onChange={updateField}
-              placeholder="这个函数是用来做什么的？"
+              placeholder="这个函数是用来做什么的？例如：`重点文字`，公式 $y=a^3$"
+              aria-describedby="description-format-help"
               rows="3"
               required
             />
+            <small id="description-format-help" className="description-format-help">
+              {'`文字` 加粗，$y=a^3$ 显示公式；管理端保留原文。'}
+            </small>
           </label>
 
           <label>

@@ -99,3 +99,15 @@ test("restart recovers an interrupted multi-file restore before serving any data
   assert.deepEqual(await (await f.request("/api/study-data")).json(), snapshot);
   await assert.rejects(fs.access(`${f.options.dataFile}.restore-journal.json`), { code: "ENOENT" });
 });
+
+test("description markup remains exact in API storage and complete backup restore", async (t) => {
+  const { request } = await fixture(t);
+  const description = "这是`立方函数`，$y=a^3$。\n分数 $\\frac{a}{b}$";
+  const created = await (await request("/api/functions", "POST", { ...example("formatted"), description })).json();
+  assert.equal(created.description, description);
+  const backup = await (await request("/api/backup")).json();
+  assert.equal(backup.functions.find((item) => item.id === created.id).description, description);
+  assert.equal((await request("/api/backup/restore", "POST", backup)).status, 200);
+  const data = await (await request("/api/study-data")).json();
+  assert.equal(data.functions.find((item) => item.id === created.id).description, description);
+});

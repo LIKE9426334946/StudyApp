@@ -6,7 +6,7 @@ import { createElement, act } from "react";
 import { createRoot } from "react-dom/client";
 import { copyText } from "../src/clipboard.js";
 
-let vite, StudyView, App, dom, root, container;
+let vite, StudyView, AdminView, FunctionDescription, App, dom, root, container;
 const data = {
   functions: [{ id: 1, library: "Python", name: "python_sample()", description: "Python", code: "print(1)" }, { id: 2, library: "NumPy", name: "numpy_sample()", description: "NumPy", code: "np.array([1])" }],
   libraries: ["Python", "NumPy"],
@@ -17,6 +17,8 @@ before(async () => {
   vite = await createServer({ server: { middlewareMode: true }, appType: "custom" });
   StudyView = (await vite.ssrLoadModule("/src/components/StudyView.jsx")).default;
   App = (await vite.ssrLoadModule("/src/App.jsx")).default;
+  AdminView = (await vite.ssrLoadModule("/src/components/AdminView.jsx")).default;
+  FunctionDescription = (await vite.ssrLoadModule("/src/components/FunctionDescription.jsx")).default;
 });
 after(async () => { await vite.close(); });
 beforeEach(() => {
@@ -86,4 +88,43 @@ test("App opens cached content without fetching updates until refresh and warns 
     assert.match(container.querySelector(".cache-warning").textContent, /无法保存离线缓存/);
     assert.equal(JSON.parse(localStorage.getItem("studyapp:study-data:v1")).functions[0].name, "python_sample()");
   } finally { dom.window.Storage.prototype.setItem = original; }
+});
+
+
+test("function descriptions mix bold text and single-dollar LaTeX in the mobile learning view", async () => {
+  const description = "这是`立方函数`，表达式为 $y=a^3$。\n分数：$\\frac{a+b}{c}$";
+  await renderStudy({ functions: [{ ...data.functions[0], description }] });
+  await click(container.querySelector('[aria-label="显示函数详情"]'));
+  const rendered = container.querySelector(".mobile-detail-section .function-description");
+  assert.equal(rendered.querySelector("strong").textContent, "立方函数");
+  assert.equal(rendered.querySelectorAll(".katex").length, 2);
+  assert.ok(rendered.querySelector("msup"));
+  assert.ok(rendered.querySelector("mfrac"));
+  assert.match(rendered.textContent, /\n分数/);
+  assert.equal(data.functions[0].description, "Python");
+});
+
+test("invalid math and raw HTML remain safe readable text", async () => {
+  const text = "正常 `加粗` $y=a^3$，错误 $\\frac{$，<img src=x onerror=alert(1)>";
+  await act(() => root.render(createElement(FunctionDescription, { text })));
+  assert.equal(container.querySelectorAll(".katex").length, 1);
+  assert.equal(container.querySelector(".description-math-error").textContent, "$\\frac{$");
+  assert.equal(container.querySelector("img"), null);
+  assert.ok(container.textContent.includes("<img src=x onerror=alert(1)>"));
+  assert.equal(container.querySelector("strong").textContent, "加粗");
+});
+
+test("admin list and editor preserve the exact description source", async () => {
+  const description = "这是`立方函数`，$y=a^3$。\n$\\frac{a+b}{c}$";
+  globalThis.fetch = async (url) => {
+    const payload = url === "api/libraries" ? data.libraries : data.directories;
+    return new Response(JSON.stringify(payload), { status: 200 });
+  };
+  await act(async () => root.render(createElement(AdminView, {
+    functions: [{ ...data.functions[0], description }], onRefresh: async () => {},
+  })));
+  assert.equal(container.querySelector(".item-content p").textContent, description);
+  await click(buttonText(container, "修改"));
+  assert.equal(container.querySelector('textarea[name="description"]').value, description);
+  assert.equal(container.querySelector(".katex"), null);
 });
