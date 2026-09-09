@@ -154,3 +154,21 @@ export function logoutAdmin() {
     method: "POST",
   });
 }
+
+export function getStudyData() {
+  return requestFrom("api/study-data", "", { cache: "no-store" });
+}
+
+export async function exportBackup(previous = false) {
+  const response = await fetch(`api/backup${previous ? "/previous" : ""}`, { cache: "no-store" });
+  if (!response.ok) {
+    notifyUnauthorized(response);
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.message || `备份失败（${response.status}）`);
+  }
+  return response.blob();
+}
+
+export function restoreBackup(backup) {
+  return requestFrom("api/backup", "/restore", { method: "POST", body: JSON.stringify(backup) });
+}

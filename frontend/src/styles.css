@@ -2795,3 +2795,31 @@ textarea:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+.cache-warning,
+.copy-error {
+  padding: 10px 14px;
+  border-radius: 12px;
+  color: #8c4b08;
+  background: #fff4df;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.mobile-catalog-refresh-time,
+.study-refresh-time {
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mobile-catalog-refresh-time {
+  margin: 12px 0;
+}
+
+.backup-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}

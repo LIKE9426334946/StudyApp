@@ -1,10 +1,10 @@
 # StudyApp
-# 运行在3000端口
+开发默认端口 3000；标准部署示例使用公网 16010 → 内部 3010。
 
 一个个人使用的代码函数学习网站 MVP。
 
 - 手机端学习页：按“目录 → 函数库 → 函数”三级结构浏览，搜索函数、展开解释和代码、切换学习卡片，并使用浏览器本地缓存和收藏。
-- 电脑端管理页：使用固定账号登录后，添加、修改、删除、查看函数，管理目录与函数库，以及导入和导出 JSON 数据。
+- 电脑端管理页：使用固定账号登录后，添加、修改、删除、查看函数，管理目录与函数库，以及导入和导出函数 JSON、完整备份与恢复。
 - 数据保存：函数位于 `backend/data/functions.json`，函数库位于 `backend/data/libraries.json`，目录与函数库归属位于 `backend/data/directories.json`。
 - 技术栈：React + Vite、Node.js + Express。
 
@@ -84,7 +84,7 @@ Vite 会把 `/api` 请求代理到 `127.0.0.1:3000`。
 npm test
 ```
 
-测试会在临时 JSON 文件上验证目录、函数库和函数管理以及导入导出，不会修改正式数据。
+测试使用临时 JSON 文件和模拟浏览器存储，覆盖目录、函数、备份恢复、并行保存、旧缓存迁移、收藏和复制降级。无需先构建前端，也不会修改正式数据。
 
 ## 生产构建
 
@@ -121,6 +121,10 @@ HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm 
 | `POST` | `/api/auth/login` | 登录固定管理账号 |
 | `GET` | `/api/auth/session` | 检查当前登录状态 |
 | `POST` | `/api/auth/logout` | 退出当前管理账号 |
+| `GET` | `/api/study-data` | 一次读取一致的函数、函数库与目录快照 |
+| `GET` | `/api/backup` | 登录后下载完整备份 |
+| `GET` | `/api/backup/previous` | 登录后下载恢复／覆盖导入前的自动备份 |
+| `POST` | `/api/backup/restore` | 登录后校验并恢复完整备份 |
 | `GET` | `/api/functions` | 获取函数列表 |
 | `GET` | `/api/functions/export` | 登录后下载 `functions.json` |
 | `POST` | `/api/functions/import?mode=append` | 登录后保留现有数据并新增导入 |
@@ -144,9 +148,9 @@ HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm 
 到 Git 仓库。用户名默认为 `noart`，管理密码必须通过
 `STUDYAPP_ADMIN_PASSWORD` 环境变量提供，不会写入源码或 Git 历史。
 
-管理页面中的“导出 functions.json”可以下载当前数据备份。导入时可以选择
+管理页面中的“导出 functions.json”只导出函数内容，不包含目录和排序。导入时可以选择
 “新增到现有数据”或“覆盖现有数据”：新增模式会保留原有函数并为导入函数
-重新分配 ID，覆盖模式会替换服务器上的全部函数。两种方式都会先检查 JSON
+重新分配 ID，覆盖模式会替换服务器上的全部函数并分配新 ID。两种方式都会先检查 JSON
 格式并要求确认。导入文件必须是 JSON 数组，导入和导出的单个
 `functions.json` 文件最大为 50MB。
 
@@ -167,108 +171,103 @@ HOST=127.0.0.1 PORT=3000 STUDYAPP_ADMIN_PASSWORD='请替换为管理密码' npm 
 
 手机端首次使用时会从服务器初始化学习内容并保存到当前浏览器。之后打开学习页
 只读取这份缓存，不会自动同步电脑端刚修改的内容；在手机端目录首页点击“刷新”
-后，才会重新读取服务器上的函数、函数库和目录并替换本地缓存。
+后，才会重新读取服务器上的函数、函数库和目录并替换本地缓存。电脑学习页也提供
+手动刷新按钮；两端显示“上次刷新”时间。旧缓存的时间显示“尚未记录”，第一次刷新后记录。
 
-## 部署到现有 Nginx
+学习内容优先存入 IndexedDB，旧 localStorage 缓存会自动迁移，迁移成功前保留旧副本。
+IndexedDB 不可用时会尝试 localStorage；两者都无法保存时会明确提示，本次仍可学习新内容，
+重新打开可能读取旧缓存。收藏和复习标记仍保存在原来的 localStorage 中，存储失败时也会提示。
+手机端点击“收藏”会清除函数库和搜索筛选，显示全部收藏。HTTP 页面复制代码会尝试兼容的
+文本选择复制方式；浏览器仍禁止复制时，会提示长按代码手动复制。
 
-假设项目放在：
+## 完整备份、恢复与数据兼容
 
-```text
-/opt/StudyApp
-```
+管理页“完整备份与恢复”提供三个按钮：
 
-安装和构建：
+- 下载完整备份：保存所有函数、函数库（包含空库）、目录（包含空目录）、归属和排序。
+- 恢复完整备份：检查格式、ID 和目录归属，确认后覆盖当前内容。手机端随后需手动刷新。
+- 下载恢复前备份：取回上次恢复或覆盖导入前自动保存的数据，可再通过“恢复完整备份”恢复。
+
+完整备份使用 `{ "format": "StudyApp-backup", "version": 1, "exportedAt": "...", "functions": [], "libraries": [], "directories": [] }` 格式，最大 50MB。
+不会导出管理密码、登录会话、浏览器收藏或复习标记。自动备份仅保留最近一份，
+保存在 `backend/data/functions.json.before-restore.json`，建议将重要备份下载到其他设备。
+
+现有函数的数字 ID 保持不变，因此升级后原有收藏仍可使用。新建及普通 JSON 导入的函数
+使用 UUID，删除后不会复用旧 ID。普通“覆盖导入”会生成新的 ID，不继承旧函数收藏；
+要恢复原有身份、目录与排序，应使用完整备份。完整备份恢复会保留函数 ID。
+导入时会将 `numpy` 等名称统一成已有函数库的实际拼写，如 `NumPy`。
+
+后端按顺序处理完整 API 操作，并为每次 JSON 写入使用独立临时文件。
+恢复／导入涉及多个 JSON 文件时，先写入恢复日志，再提交各文件；若进程中断，
+重启后下一次 API 请求会先完成恢复。恢复日志 `functions.json.restore-journal.json`
+及自动备份均不提交到 Git。仍然只运行一个 Node.js 服务实例。
+
+## 标准部署（按 Development.MD）
+
+环境为 Ubuntu，使用 root，项目路径 `/opt/StudyApp`，不需要 sudo。
+仓库提供 `deploy/StudyApp.service` 与 `deploy/StudyApp.nginx.conf`。
+新部署示例使用公网 16010、内部 3010，Node.js 仅监听 127.0.0.1，Nginx 同时支持 `/` 和旧 `/blog/` 入口。
+
+创建项目并安装构建：
 
 ```bash
+mkdir -p /opt/StudyApp
+git clone https://github.com/LIKE9426334946/StudyApp.git /opt/StudyApp
 cd /opt/StudyApp
 npm run setup
+npm test
 npm run build
 ```
 
-创建 systemd 服务：
-
-```bash
-sudo nano /etc/systemd/system/studyapp.service
-```
-
-内容：
+创建 `/opt/StudyApp/backend/.env`，填写管理密码（该文件已被 Git 忽略）：
 
 ```ini
-[Unit]
-Description=StudyApp Node.js service
-After=network.target
-
-[Service]
-Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/opt/StudyApp
-Environment=NODE_ENV=production
-Environment=HOST=127.0.0.1
-Environment=PORT=3000
-Environment=STUDYAPP_ADMIN_PASSWORD=请替换为管理密码
-ExecStart=/usr/bin/npm start
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
+STUDYAPP_ADMIN_PASSWORD='请替换为你的管理密码'
 ```
 
-启动服务：
+安装并启用服务：
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now studyapp
-sudo systemctl status studyapp --no-pager
+cp deploy/StudyApp.service /etc/systemd/system/StudyApp.service
+systemctl daemon-reload
+systemctl enable --now StudyApp
+systemctl status StudyApp --no-pager
 ```
 
-因为管理页会修改 `functions.json`，需要允许服务用户写入数据目录：
+安装 Nginx 独立配置。先确认 16010 没有被其他 server 配置占用；已有相同端口配置时，
+合并或替换原 StudyApp 配置，避免同一端口出现冲突。
 
 ```bash
-sudo chown -R www-data:www-data /opt/StudyApp/backend/data
-sudo chmod 750 /opt/StudyApp/backend/data
-sudo chmod 640 /opt/StudyApp/backend/data/functions.json
-sudo chmod 640 /opt/StudyApp/backend/data/libraries.json
-sudo chmod 640 /opt/StudyApp/backend/data/directories.json
+cp deploy/StudyApp.nginx.conf /etc/nginx/sites-available/StudyApp
+ln -s /etc/nginx/sites-available/StudyApp /etc/nginx/sites-enabled/StudyApp
+nginx -t
+systemctl reload nginx
 ```
 
-Nginx 中的 `/blog` 配置：
+访问 `http://服务器IP:16010/` 或 `http://服务器IP:16010/blog/`。
 
-```nginx
-location = /blog {
-    return 301 /blog/;
-}
+## 已有安装更新
 
-location ^~ /blog/ {
-    client_max_body_size 50m;
-    proxy_pass http://127.0.0.1:3000/;
-    proxy_http_version 1.1;
-    proxy_set_header Host $http_host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Connection "";
-}
-```
-
-检查并重新加载：
+本次功能更新可以沿用现有 systemd、Nginx 和访问地址，不需要为使用新功能切换端口。
+先备份 `backend/data`，再更新源码、安装依赖、运行测试并构建：
 
 ```bash
-sudo nginx -t
-sudo systemctl reload nginx
+cd /opt/StudyApp
+cp -a backend/data "/opt/StudyApp-data-backup-$(date +%Y%m%d-%H%M%S)"
+git pull --ff-only origin main
+npm run setup
+npm test
+npm run build
 ```
 
-公网访问：
-
-```text
-http://62.234.33.110:16010/blog/
-```
+随后重启现有服务：旧安装通常是 `systemctl restart studyapp`，按上述标准配置的新安装是
+`systemctl restart StudyApp`。不要同时启动两个服务实例。
+若 git pull 提示本地数据文件冲突，请保留刚才的数据备份并处理冲突，不要强制覆盖学习资料。
+重新加载网页以使用新前端；手机端目录首页仍需点击“刷新”才会同步服务器内容。
 
 ## 当前版本限制
 
-这是第一版 MVP：
-
 - 只有一个固定管理账号，不支持注册、多账号或分级权限。
-- JSON 文件适合个人、低并发使用，不适合多用户同时修改。
-- 收藏只保存在当前浏览器的 `localStorage` 中。
+- JSON 文件适合个人使用；请求队列限定于单个 Node.js 进程。
+- 收藏与复习标记只保存在当前浏览器，清理网站数据会删除这些标记。
+- 学习内容缓存不包含应用页面本身；本项目不提供完整的离线网页启动能力。

@@ -37,7 +37,9 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
     "utf8",
   );
 
+  await fs.writeFile(path.join(tempDirectory, "index.html"), '<div id="root"></div>');
   const server = createApp({
+    frontendDist: tempDirectory,
     dataFile,
     librariesFile,
     directoriesFile,
@@ -369,9 +371,9 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   });
   assert.equal(createResponse.status, 201);
   const created = await createResponse.json();
-  assert.equal(created.id, 2);
+  assert.match(created.id, /^[0-9a-f-]{36}$/);
 
-  const updateResponse = await authenticatedFetch(`${baseUrl}/api/functions/2`, {
+  const updateResponse = await authenticatedFetch(`${baseUrl}/api/functions/${created.id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -389,7 +391,7 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
 
   const finalResponse = await fetch(`${baseUrl}/api/functions`);
   const finalItems = await finalResponse.json();
-  assert.deepEqual(finalItems.map((item) => item.id), [2]);
+  assert.deepEqual(finalItems.map((item) => item.id), [created.id]);
 
   const exportResponse = await authenticatedFetch(
     `${baseUrl}/api/functions/export`,
@@ -401,7 +403,7 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   );
   assert.deepEqual(
     (await exportResponse.json()).map((item) => item.id),
-    [2],
+    [created.id],
   );
 
   const invalidImportResponse = await authenticatedFetch(
@@ -421,7 +423,7 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   const unchangedResponse = await fetch(`${baseUrl}/api/functions`);
   assert.deepEqual(
     (await unchangedResponse.json()).map((item) => item.id),
-    [2],
+    [created.id],
   );
 
   const invalidModeResponse = await authenticatedFetch(
@@ -457,10 +459,9 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   assert.equal(appendImportResult.mode, "append");
   assert.equal(appendImportResult.importedCount, 1);
   assert.equal(appendImportResult.count, 2);
-  assert.deepEqual(
-    appendImportResult.functions.map((item) => item.id),
-    [2, 3],
-  );
+  assert.equal(appendImportResult.functions[0].id, created.id);
+  assert.match(appendImportResult.functions[1].id, /^[0-9a-f-]{36}$/);
+  assert.notEqual(appendImportResult.functions[1].id, created.id);
 
   const importResponse = await authenticatedFetch(
     `${baseUrl}/api/functions/import?mode=replace`,
@@ -494,10 +495,8 @@ test("管理 API 需要登录，并可完成函数库、函数和导入导出操
   assert.equal(importResult.mode, "replace");
   assert.equal(importResult.importedCount, 2);
   assert.equal(importResult.count, 2);
-  assert.deepEqual(
-    importResult.functions.map((item) => item.id),
-    [7, 8],
-  );
+  assert.equal(new Set(importResult.functions.map((item) => item.id)).size, 2);
+  for (const item of importResult.functions) assert.match(item.id, /^[0-9a-f-]{36}$/);
 
   const importedListResponse = await fetch(`${baseUrl}/api/functions`);
   const importedItems = await importedListResponse.json();

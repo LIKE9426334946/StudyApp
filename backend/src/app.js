@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
+const { writeJson, queuedRoutes, snapshotStore } = require("./persistence");
 
 const DEFAULT_DATA_FILE = path.join(__dirname, "../data/functions.json");
 const DEFAULT_LIBRARIES_FILE = path.join(__dirname, "../data/libraries.json");
@@ -22,7 +23,8 @@ function normalizeText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeFunction(input) {
+function normalizeFunction(input = {}) {
+  input = input || {};
   return {
     library: normalizeText(input.library),
     name: normalizeText(input.name),
@@ -44,49 +46,30 @@ function validateFunction(item) {
   return missing;
 }
 
-function normalizeImportedFunctions(input) {
-  if (!Array.isArray(input)) {
-    const error = new Error("导入文件的顶层数据必须是数组");
-    error.status = 400;
-    throw error;
-  }
+function validFunctionId(id) {
+  return (Number.isSafeInteger(id) && id > 0) ||
+    (typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id));
+}
 
-  const largestImportedId = input.reduce((largestId, item) => {
-    const id = Number(item?.id);
-    return Number.isInteger(id) && id > largestId ? id : largestId;
-  }, 0);
+function badRequest(message) {
+  return Object.assign(new Error(message), { status: 400 });
+}
+
+function normalizeImportedFunctions(input, { preserveIds = false } = {}) {
+  if (!Array.isArray(input)) throw badRequest("导入文件的顶层数据必须是数组");
   const usedIds = new Set();
-  let nextId = largestImportedId + 1;
-
   return input.map((inputItem, index) => {
     if (!inputItem || typeof inputItem !== "object" || Array.isArray(inputItem)) {
-      const error = new Error(`第 ${index + 1} 条函数数据必须是对象`);
-      error.status = 400;
-      throw error;
+      throw badRequest(`第 ${index + 1} 条函数数据必须是对象`);
     }
-
     const item = normalizeFunction(inputItem);
     const missing = validateFunction(item);
-
-    if (missing.length > 0) {
-      const error = new Error(
-        `第 ${index + 1} 条函数数据缺少：${missing.join("、")}`,
-      );
-      error.status = 400;
-      throw error;
+    if (missing.length) throw badRequest(`第 ${index + 1} 条函数数据缺少：${missing.join("、")}`);
+    const id = preserveIds ? inputItem.id : crypto.randomUUID();
+    if (!validFunctionId(id) || usedIds.has(String(id))) {
+      throw badRequest(`第 ${index + 1} 条函数的 ID 无效或重复`);
     }
-
-    const importedId = Number(inputItem.id);
-    let id =
-      Number.isInteger(importedId) && importedId > 0 && !usedIds.has(importedId)
-        ? importedId
-        : nextId++;
-
-    while (usedIds.has(id)) {
-      id = nextId++;
-    }
-
-    usedIds.add(id);
+    usedIds.add(String(id));
     return { id, ...item };
   });
 }
@@ -102,19 +85,9 @@ async function readFunctions(dataFile) {
   return functions;
 }
 
-async function writeFunctions(dataFile, functions) {
-  const tempFile = `${dataFile}.tmp`;
-  await fsp.mkdir(path.dirname(dataFile), { recursive: true });
-  await fsp.writeFile(tempFile, `${JSON.stringify(functions, null, 2)}\n`, "utf8");
-  await fsp.rename(tempFile, dataFile);
-}
+const writeFunctions = writeJson;
 
-async function writeLibraries(librariesFile, libraries) {
-  const tempFile = `${librariesFile}.tmp`;
-  await fsp.mkdir(path.dirname(librariesFile), { recursive: true });
-  await fsp.writeFile(tempFile, `${JSON.stringify(libraries, null, 2)}\n`, "utf8");
-  await fsp.rename(tempFile, librariesFile);
-}
+const writeLibraries = writeJson;
 
 function uniqueLibraryNames(names) {
   const seen = new Set();
@@ -136,16 +109,7 @@ function uniqueDirectoryNames(names) {
   return uniqueLibraryNames(names);
 }
 
-async function writeDirectories(directoriesFile, directories) {
-  const tempFile = `${directoriesFile}.tmp`;
-  await fsp.mkdir(path.dirname(directoriesFile), { recursive: true });
-  await fsp.writeFile(
-    tempFile,
-    `${JSON.stringify(directories, null, 2)}\n`,
-    "utf8",
-  );
-  await fsp.rename(tempFile, directoriesFile);
-}
+const writeDirectories = writeJson;
 
 function normalizeDirectories(input) {
   if (!Array.isArray(input)) {
@@ -432,16 +396,7 @@ async function readSessions(sessionsFile) {
   }
 }
 
-async function writeSessions(sessionsFile, sessions) {
-  const tempFile = `${sessionsFile}.tmp`;
-  await fsp.mkdir(path.dirname(sessionsFile), { recursive: true });
-  await fsp.writeFile(
-    tempFile,
-    `${JSON.stringify(sessions, null, 2)}\n`,
-    "utf8",
-  );
-  await fsp.rename(tempFile, sessionsFile);
-}
+const writeSessions = writeJson;
 
 function activeSessions(sessions, now = Date.now()) {
   return sessions.filter(
@@ -497,11 +452,31 @@ function createApp(options = {}) {
   }
 
   const app = express();
+  const journalFile = `${dataFile}.restore-journal.json`;
+  const previousBackupFile = `${dataFile}.before-restore.json`;
+  const snapshots = snapshotStore({ functions: dataFile, libraries: librariesFile, directories: directoriesFile }, journalFile);
+  const api = queuedRoutes(app, snapshots.recover);
+
+  async function currentSnapshot() {
+    const libraries = await readLibraries(librariesFile, dataFile);
+    const directories = await readDirectories(directoriesFile, librariesFile, dataFile);
+    const functions = await readFunctions(dataFile);
+    return { format: "StudyApp-backup", version: 1, exportedAt: new Date().toISOString(), functions, libraries, directories };
+  }
+
+  function sendBackup(res, snapshot, filename) {
+    const content = `${JSON.stringify(snapshot, null, 2)}\n`;
+    if (Buffer.byteLength(content, "utf8") > MAX_JSON_FILE_SIZE) {
+      return res.status(413).json({ message: "完整备份超过 50MB，请直接备份服务器数据目录" });
+    }
+    res.attachment(filename).type("application/json").send(content);
+  }
+
 
   app.disable("x-powered-by");
   app.use(express.json({ limit: MAX_JSON_FILE_SIZE }));
 
-  app.get("/api/health", (req, res) => {
+  api.get("/api/health", (req, res) => {
     res.json({
       ok: true,
       service: "StudyApp API",
@@ -509,7 +484,7 @@ function createApp(options = {}) {
     });
   });
 
-  app.post("/api/auth/login", async (req, res, next) => {
+  api.post("/api/auth/login", async (req, res, next) => {
     try {
       res.set("Cache-Control", "no-store");
       const username = normalizeText(req.body?.username);
@@ -548,7 +523,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.get("/api/auth/session", async (req, res, next) => {
+  api.get("/api/auth/session", async (req, res, next) => {
     try {
       res.set("Cache-Control", "no-store");
       const token = getSessionToken(req);
@@ -586,7 +561,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.post("/api/auth/logout", async (req, res, next) => {
+  api.post("/api/auth/logout", async (req, res, next) => {
     try {
       res.set("Cache-Control", "no-store");
       const token = getSessionToken(req);
@@ -633,7 +608,69 @@ function createApp(options = {}) {
     }
   }
 
-  app.get("/api/functions", async (req, res, next) => {
+  api.get("/api/study-data", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const { functions, libraries, directories } = await currentSnapshot();
+    res.json({ functions, libraries, directories });
+  });
+
+  api.get("/api/backup", requireAdmin, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    sendBackup(res, await currentSnapshot(), "StudyApp-backup.json");
+  });
+
+  api.get("/api/backup/previous", requireAdmin, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      sendBackup(res, JSON.parse(await fsp.readFile(previousBackupFile, "utf8")), "StudyApp-before-restore.json");
+    } catch (error) {
+      if (error.code === "ENOENT") return res.status(404).json({ message: "还没有恢复前备份" });
+      throw error;
+    }
+  });
+
+  api.post("/api/backup/restore", requireAdmin, async (req, res) => {
+    const backup = req.body;
+    if (backup?.format !== "StudyApp-backup" || backup.version !== 1 ||
+        !Array.isArray(backup.libraries) || !Array.isArray(backup.directories)) {
+      throw badRequest("请选择有效的 StudyApp 完整备份（版本 1）");
+    }
+    const functions = normalizeImportedFunctions(backup.functions, { preserveIds: true });
+    const libraries = uniqueLibraryNames(backup.libraries);
+    if (libraries.length !== backup.libraries.length || backup.libraries.some((name) => typeof name !== "string" || !name.trim() )) {
+      throw badRequest("备份中的函数库名称无效或重复");
+    }
+    const directoryNames = new Set();
+    const assigned = new Set();
+    const directories = backup.directories.map((item) => {
+      const name = normalizeText(item?.name);
+      if (!name || directoryNames.has(name.toLowerCase()) || !Array.isArray(item?.libraries)) {
+        throw badRequest("备份中的目录名称或结构无效");
+      }
+      directoryNames.add(name.toLowerCase());
+      const names = item.libraries.map((value) => {
+        const library = findLibrary(libraries, value);
+        if (!library || assigned.has(library)) throw badRequest("备份中的函数库归属无效或重复");
+        assigned.add(library);
+        return library;
+      });
+      return { name, libraries: names };
+    });
+    if (assigned.size !== libraries.length || !findDirectory(directories, UNCATEGORIZED_DIRECTORY)) {
+      throw badRequest("备份必须包含全部函数库的归属和未分类目录");
+    }
+    for (const item of functions) {
+      const library = findLibrary(libraries, item.library);
+      if (!library) throw badRequest("备份中的函数引用了不存在的函数库");
+      item.library = library;
+    }
+    const restored = { functions, libraries, directories: reconcileDirectories(directories, libraries) };
+    await writeJson(previousBackupFile, await currentSnapshot());
+    await snapshots.commit(restored);
+    res.json({ message: `已恢复 ${functions.length} 个函数、${libraries.length} 个函数库和 ${directories.length} 个目录。`, count: functions.length });
+  });
+
+  api.get("/api/functions", async (req, res, next) => {
     try {
       const functions = await readFunctions(dataFile);
       res.json(functions);
@@ -642,7 +679,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.get("/api/functions/export", requireAdmin, async (req, res, next) => {
+  api.get("/api/functions/export", requireAdmin, async (req, res, next) => {
     try {
       const functions = await readFunctions(dataFile);
       const content = `${JSON.stringify(functions, null, 2)}\n`;
@@ -661,7 +698,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.post("/api/functions/import", requireAdmin, async (req, res, next) => {
+  api.post("/api/functions/import", requireAdmin, async (req, res, next) => {
     try {
       const mode = normalizeText(req.query.mode) || "replace";
 
@@ -672,27 +709,13 @@ function createApp(options = {}) {
       }
 
       const importedFunctions = normalizeImportedFunctions(req.body);
-      let functions = importedFunctions;
-
-      if (mode === "append") {
-        const existingFunctions = await readFunctions(dataFile);
-
-        let nextId =
-          existingFunctions.reduce(
-            (maxId, current) => Math.max(maxId, Number(current.id) || 0),
-            0,
-          ) + 1;
-        const appendedFunctions = importedFunctions.map((item) => ({
-          ...item,
-          id: nextId++,
-        }));
-
-        functions = [...existingFunctions, ...appendedFunctions];
-      }
-
-      await writeFunctions(dataFile, functions);
-      await readLibraries(librariesFile, dataFile);
-      await readDirectories(directoriesFile, librariesFile, dataFile);
+      const previous = await currentSnapshot();
+      const libraries = uniqueLibraryNames([...previous.libraries, ...importedFunctions.map((item) => item.library)]);
+      for (const item of importedFunctions) item.library = findLibrary(libraries, item.library);
+      const functions = mode === "append" ? [...previous.functions, ...importedFunctions] : importedFunctions;
+      const directories = reconcileDirectories(previous.directories, libraries);
+      if (mode === "replace") await writeJson(previousBackupFile, previous);
+      await snapshots.commit({ functions, libraries, directories });
 
       return res.json({
         message:
@@ -709,7 +732,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.post("/api/functions", requireAdmin, async (req, res, next) => {
+  api.post("/api/functions", requireAdmin, async (req, res, next) => {
     try {
       const item = normalizeFunction(req.body);
       const missing = validateFunction(item);
@@ -731,9 +754,7 @@ function createApp(options = {}) {
 
       item.library = library;
       const functions = await readFunctions(dataFile);
-      const nextId =
-        functions.reduce((maxId, current) => Math.max(maxId, Number(current.id) || 0), 0) + 1;
-      const created = { id: nextId, ...item };
+      const created = { id: crypto.randomUUID(), ...item };
 
       functions.push(created);
       await writeFunctions(dataFile, functions);
@@ -744,11 +765,11 @@ function createApp(options = {}) {
     }
   });
 
-  app.put("/api/functions/:id", requireAdmin, async (req, res, next) => {
+  api.put("/api/functions/:id", requireAdmin, async (req, res, next) => {
     try {
-      const id = Number(req.params.id);
+      const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : req.params.id;
 
-      if (!Number.isInteger(id) || id <= 0) {
+      if (!validFunctionId(id)) {
         return res.status(400).json({ message: "函数 ID 无效" });
       }
 
@@ -772,7 +793,7 @@ function createApp(options = {}) {
 
       item.library = library;
       const functions = await readFunctions(dataFile);
-      const index = functions.findIndex((current) => Number(current.id) === id);
+      const index = functions.findIndex((current) => String(current.id) === String(id));
 
       if (index === -1) {
         return res.status(404).json({ message: "没有找到这个函数" });
@@ -788,16 +809,16 @@ function createApp(options = {}) {
     }
   });
 
-  app.delete("/api/functions/:id", requireAdmin, async (req, res, next) => {
+  api.delete("/api/functions/:id", requireAdmin, async (req, res, next) => {
     try {
-      const id = Number(req.params.id);
+      const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : req.params.id;
 
-      if (!Number.isInteger(id) || id <= 0) {
+      if (!validFunctionId(id)) {
         return res.status(400).json({ message: "函数 ID 无效" });
       }
 
       const functions = await readFunctions(dataFile);
-      const remaining = functions.filter((current) => Number(current.id) !== id);
+      const remaining = functions.filter((current) => String(current.id) !== String(id));
 
       if (remaining.length === functions.length) {
         return res.status(404).json({ message: "没有找到这个函数" });
@@ -810,7 +831,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.get("/api/libraries", async (req, res, next) => {
+  api.get("/api/libraries", async (req, res, next) => {
     try {
       const libraries = await readLibraries(librariesFile, dataFile);
       return res.json(libraries);
@@ -819,7 +840,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.get("/api/directories", async (req, res, next) => {
+  api.get("/api/directories", async (req, res, next) => {
     try {
       const directories = await readDirectories(
         directoriesFile,
@@ -832,7 +853,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.post("/api/directories", requireAdmin, async (req, res, next) => {
+  api.post("/api/directories", requireAdmin, async (req, res, next) => {
     try {
       const name = normalizeText(req.body?.name);
 
@@ -872,7 +893,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.put("/api/directories/order", requireAdmin, async (req, res, next) => {
+  api.put("/api/directories/order", requireAdmin, async (req, res, next) => {
     try {
       if (!Array.isArray(req.body?.directories)) {
         return res.status(400).json({ message: "目录顺序必须是数组" });
@@ -908,7 +929,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.delete("/api/directories/:name", requireAdmin, async (req, res, next) => {
+  api.delete("/api/directories/:name", requireAdmin, async (req, res, next) => {
     try {
       const directories = await readDirectories(
         directoriesFile,
@@ -945,7 +966,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.post("/api/libraries", requireAdmin, async (req, res, next) => {
+  api.post("/api/libraries", requireAdmin, async (req, res, next) => {
     try {
       const name = normalizeText(req.body?.name);
       const requestedDirectory =
@@ -985,7 +1006,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.put("/api/libraries/order", requireAdmin, async (req, res, next) => {
+  api.put("/api/libraries/order", requireAdmin, async (req, res, next) => {
     try {
       if (!Array.isArray(req.body?.libraries)) {
         return res.status(400).json({ message: "函数库顺序必须是数组" });
@@ -1018,7 +1039,7 @@ function createApp(options = {}) {
     }
   });
 
-  app.put(
+  api.put(
     "/api/libraries/:name/directory",
     requireAdmin,
     async (req, res, next) => {
@@ -1051,7 +1072,7 @@ function createApp(options = {}) {
     },
   );
 
-  app.delete("/api/libraries/:name", requireAdmin, async (req, res, next) => {
+  api.delete("/api/libraries/:name", requireAdmin, async (req, res, next) => {
     try {
       const libraries = await readLibraries(librariesFile, dataFile);
       const library = findLibrary(libraries, req.params.name);
@@ -1094,12 +1115,13 @@ function createApp(options = {}) {
     }
   });
 
-  if (fs.existsSync(FRONTEND_DIST)) {
-    app.use(express.static(FRONTEND_DIST));
+  const frontendDist = options.frontendDist || FRONTEND_DIST;
+  if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
 
     app.use((req, res, next) => {
       if (req.method === "GET" && !req.path.startsWith("/api/")) {
-        return res.sendFile(path.join(FRONTEND_DIST, "index.html"));
+        return res.sendFile(path.join(frontendDist, "index.html"));
       }
 
       return next();

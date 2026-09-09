@@ -1,3 +1,4 @@
+import BackupPanel from "./BackupPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createDirectory,
@@ -1136,7 +1137,7 @@ function AdminView({ functions, onRefresh }) {
         <div>
           <span>JSON BACKUP</span>
           <h2>数据导入与导出</h2>
-          <p>导出用于备份；导入前可以选择新增或覆盖，文件最大 50MB。</p>
+          <p>仅导出函数内容。保存目录和排序请使用完整备份；文件最大 50MB。</p>
         </div>
 
         <div className="data-transfer-controls">
@@ -1183,6 +1184,17 @@ function AdminView({ functions, onRefresh }) {
       {transferError && (
         <p className="form-message error-message transfer-message">{transferError}</p>
       )}
+
+      <BackupPanel
+        disabled={saving || transferring || librarySaving || directorySaving}
+        onRestored={async () => {
+          resetForm();
+          setDirectorySortOpen(false);
+          setLibrarySortOpen(false);
+          await onRefresh();
+          await loadCatalog();
+        }}
+      />
 
       <section className="function-scope-card">
         <div className="function-scope-heading">

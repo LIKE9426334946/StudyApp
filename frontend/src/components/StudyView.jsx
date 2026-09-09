@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { copyText } from "../clipboard";
 import {
   loadReviewedLibraries,
   saveReviewedLibraries,
@@ -55,6 +56,8 @@ function StudyView({
   onToggleFavorite,
   onRefresh,
   refreshing,
+  refreshedAt,
+  storageWarning,
 }) {
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -67,6 +70,9 @@ function StudyView({
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const copyTimer = useRef(null);
+  const copyRequest = useRef(0);
   const [refreshMessage, setRefreshMessage] = useState("");
   const [refreshError, setRefreshError] = useState("");
   const [reviewedLibraries, setReviewedLibraries] = useState(() =>
@@ -208,6 +214,15 @@ function StudyView({
   }, [pendingCatalogFunctionId, visibleFunctions]);
 
   const current = visibleFunctions[index];
+  useEffect(() => {
+    copyRequest.current += 1;
+    setCopied(false);
+    setCopyError("");
+    return () => { copyRequest.current += 1; window.clearTimeout(copyTimer.current); };
+  }, [current?.id]);
+  const refreshTime = refreshedAt && Number.isFinite(Date.parse(refreshedAt))
+    ? new Date(refreshedAt).toLocaleString("zh-CN", { hour12: false })
+    : "尚未记录";
 
   function move(direction, scrollToTop = false) {
     if (visibleFunctions.length < 2) return;
@@ -238,6 +253,8 @@ function StudyView({
 
   function showFavorites() {
     setCatalogOpen(false);
+    setLibrary("全部");
+    setFunctionQuery("");
     setFavoritesOnly(true);
   }
 
@@ -260,18 +277,12 @@ function StudyView({
   }
 
   function toggleReviewedLibrary(libraryName) {
-    setReviewedLibraries((current) => {
-      const next = new Set(current);
-
-      if (next.has(libraryName)) {
-        next.delete(libraryName);
-      } else {
-        next.add(libraryName);
-      }
-
-      saveReviewedLibraries(next);
-      return next;
-    });
+    const next = new Set(reviewedLibraries);
+    if (next.has(libraryName)) next.delete(libraryName);
+    else next.add(libraryName);
+    const saved = saveReviewedLibraries(next);
+    setReviewedLibraries(next);
+    setRefreshError(saved ? "" : "复习标记仅在本次打开期间有效，浏览器未能保存，请释放存储空间后重试。");
   }
 
   async function refreshCatalog() {
@@ -279,8 +290,12 @@ function StudyView({
     setRefreshError("");
 
     try {
-      await onRefresh();
-      setRefreshMessage("已加载服务器上的最新函数内容。");
+      const result = await onRefresh();
+      setLibrary("全部");
+      setFunctionQuery("");
+      setIndex(0);
+      setExpanded(false);
+      setRefreshMessage(result.cacheSaved ? "已加载并保存服务器上的最新内容。" : "");
     } catch (requestError) {
       setRefreshError(requestError.message || "刷新失败，请稍后重试。");
     }
@@ -288,18 +303,24 @@ function StudyView({
 
   async function copyCode() {
     if (!current) return;
-
+    const request = ++copyRequest.current;
+    setCopyError("");
     try {
-      await navigator.clipboard.writeText(current.code);
+      await copyText(current.code);
+      if (request !== copyRequest.current) return;
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+      window.clearTimeout(copyTimer.current);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1600);
     } catch {
+      if (request !== copyRequest.current) return;
       setCopied(false);
+      setCopyError("复制失败，请长按代码手动复制。");
     }
   }
 
   return (
     <section className="study-layout">
+      {storageWarning && <p className="cache-warning" role="status">{storageWarning}</p>}
       <div className={`mobile-study-view ${expanded ? "details-open" : ""}`}>
         {current ? (
           <>
@@ -384,6 +405,7 @@ function StudyView({
                     </button>
                   </div>
 
+                  {copyError && <p className="copy-error" role="status">{copyError}</p>}
                   <pre className="mobile-code-block">
                     <code>{current.code}</code>
                   </pre>
@@ -525,9 +547,11 @@ function StudyView({
               </div>
             </div>
 
-            {!catalogDirectory &&
-              !catalogLibrary &&
-              (refreshMessage || refreshError) && (
+            {!catalogDirectory && !catalogLibrary && (
+              <p className="mobile-catalog-refresh-time">上次刷新：{refreshTime}</p>
+            )}
+            {storageWarning && <p className="cache-warning" role="status">{storageWarning}</p>}
+            {(refreshMessage || refreshError) && (
                 <p
                   className={`mobile-catalog-refresh-status ${
                     refreshError ? "error" : ""
@@ -693,6 +717,8 @@ function StudyView({
             <p className="eyebrow">FUNCTION LIBRARY</p>
             <h1>今天想学哪个函数？</h1>
             <p>先回忆它的作用，再展开查看解释和示例。</p>
+            <p className="study-refresh-time">上次刷新：{refreshTime} <button className="text-button" type="button" disabled={refreshing} onClick={refreshCatalog}>{refreshing ? "刷新中……" : "刷新内容"}</button></p>
+            {(refreshMessage || refreshError) && <p role="status">{refreshError || refreshMessage}</p>}
           </div>
 
           <label className="search-box">
@@ -723,7 +749,7 @@ function StudyView({
           <button
             className={`favorite-filter ${favoritesOnly ? "active" : ""}`}
             type="button"
-            onClick={() => setFavoritesOnly((currentValue) => !currentValue)}
+            onClick={() => favoritesOnly ? showStudy() : showFavorites()}
           >
             {favoritesOnly ? "★" : "☆"} 只看收藏
           </button>

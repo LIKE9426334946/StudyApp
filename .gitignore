@@ -5,3 +5,5 @@ dist/
 backend/data/*.tmp
 backend/data/admin-sessions.json
 
+backend/data/*.restore-journal.json
+backend/data/*.before-restore.json

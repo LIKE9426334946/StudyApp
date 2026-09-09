@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "setup": "npm install --prefix backend && npm install --prefix frontend",
+    "setup": "npm ci --prefix backend && npm ci --prefix frontend",
     "build": "npm run build --prefix frontend",
     "start": "npm start --prefix backend",
-    "test": "npm test --prefix backend"
+    "test": "npm test --prefix backend && npm test --prefix frontend"
   }
 }
-

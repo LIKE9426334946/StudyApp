@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   getAdminSession,
-  getDirectories,
-  getFunctions,
-  getLibraries,
+  getStudyData,
   logoutAdmin,
 } from "./api";
 import AdminView from "./components/AdminView";
@@ -18,20 +16,15 @@ import {
 import "./login.css";
 
 async function fetchLatestData() {
-  const [functions, libraries, directories] = await Promise.all([
-    getFunctions(),
-    getLibraries(),
-    getDirectories(),
-  ]);
-
-  return { functions, libraries, directories };
+  return getStudyData();
 }
 
 function App() {
   const [mode, setMode] = useState("study");
-  const [studyData, setStudyData] = useState(() => loadStudyData());
+  const [studyData, setStudyData] = useState(null);
   const [studyRefreshing, setStudyRefreshing] = useState(false);
   const [studyError, setStudyError] = useState("");
+  const [storageWarning, setStorageWarning] = useState("");
   const [adminData, setAdminData] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState("");
@@ -44,10 +37,11 @@ function App() {
     setStudyError("");
 
     try {
-      const latestData = await fetchLatestData();
+      const latestData = { ...await fetchLatestData(), refreshedAt: new Date().toISOString() };
+      const cacheSaved = await saveStudyData(latestData);
       setStudyData(latestData);
-      saveStudyData(latestData);
-      return latestData;
+      setStorageWarning(cacheSaved ? "" : "已读取最新内容，但无法保存离线缓存。重新打开时可能仍显示旧内容，请释放浏览器存储空间后再次刷新。");
+      return { ...latestData, cacheSaved };
     } catch (requestError) {
       setStudyError(requestError.message);
       throw requestError;
@@ -57,10 +51,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!studyData) {
-      refreshStudyData().catch(() => {});
-    }
-  }, [refreshStudyData, studyData]);
+    let active = true;
+    loadStudyData().then((cached) => {
+      if (!active) return;
+      if (cached) setStudyData(cached);
+      else refreshStudyData().catch(() => {});
+    });
+    return () => { active = false; };
+  }, [refreshStudyData]);
 
   const loadAdminData = useCallback(async () => {
     setAdminLoading(true);
@@ -122,18 +120,12 @@ function App() {
   }
 
   function toggleFavorite(id) {
-    setFavorites((current) => {
-      const next = new Set(current);
-
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-
-      saveFavorites(next);
-      return next;
-    });
+    const next = new Set(favorites);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    const saved = saveFavorites(next);
+    setFavorites(next);
+    if (!saved) setStorageWarning("收藏仅在本次打开期间有效，浏览器未能保存。请释放存储空间后重试。");
   }
 
   return (
@@ -200,6 +192,8 @@ function App() {
               onToggleFavorite={toggleFavorite}
               onRefresh={refreshStudyData}
               refreshing={studyRefreshing}
+              refreshedAt={studyData.refreshedAt}
+              storageWarning={storageWarning}
             />
           )
         ) : authLoading ? (
