@@ -3,10 +3,9 @@ import { before, after, beforeEach, afterEach, test } from "node:test";
 import { JSDOM } from "jsdom";
 import { createServer } from "vite";
 import { createElement, act } from "react";
-import { createRoot } from "react-dom/client";
 import { copyText } from "../src/clipboard.js";
 
-let vite, StudyView, AdminView, BackupPanel, FunctionDescription, App, dom, root, container;
+let vite, StudyView, AdminView, BackupPanel, FunctionDescription, App, dom, root, container, createRoot;
 const data = {
   functions: [{ id: 1, library: "Python", name: "python_sample()", description: "Python", code: "print(1)" }, { id: 2, library: "NumPy", name: "numpy_sample()", description: "NumPy", code: "np.array([1])" }],
   libraries: ["Python", "NumPy"],
@@ -14,17 +13,26 @@ const data = {
   refreshedAt: "2026-09-09T01:00:00Z",
 };
 before(async () => {
+  // Initialize React's DOM event support before loading components.
+  const initialDom = createTestDOM();
+  ({ createRoot } = await import("react-dom/client"));
   vite = await createServer({ server: { middlewareMode: true }, appType: "custom" });
   StudyView = (await vite.ssrLoadModule("/src/components/StudyView.jsx")).default;
   App = (await vite.ssrLoadModule("/src/App.jsx")).default;
   AdminView = (await vite.ssrLoadModule("/src/components/AdminView.jsx")).default;
   BackupPanel = (await vite.ssrLoadModule("/src/components/BackupPanel.jsx")).default;
   FunctionDescription = (await vite.ssrLoadModule("/src/components/FunctionDescription.jsx")).default;
+  initialDom.window.close();
 });
 after(async () => { await vite.close(); });
+function createTestDOM() {
+  const testDom = new JSDOM('<!doctype html><div id="root"></div>', { url: "http://studyapp.test/" });
+  for (const key of ["window", "document", "navigator", "localStorage", "Event"]) Object.defineProperty(globalThis, key, { configurable: true, value: testDom.window[key], writable: true });
+  testDom.window.HTMLElement.prototype.scrollIntoView = function () {};
+  return testDom;
+}
 beforeEach(() => {
-  dom = new JSDOM('<!doctype html><div id="root"></div>', { url: "http://studyapp.test/" });
-  for (const key of ["window", "document", "navigator", "localStorage", "Event"]) Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key], writable: true });
+  dom = createTestDOM();
   globalThis.indexedDB = undefined;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   container = document.getElementById("root");
@@ -33,6 +41,14 @@ beforeEach(() => {
 afterEach(async () => { await act(() => root.unmount()); dom.window.close(); });
 const click = async (element) => { assert.ok(element, "expected button exists"); await act(async () => { element.click(); }); };
 const buttonText = (scope, text) => [...scope.querySelectorAll("button")].find((button) => button.textContent.trim() === text);
+const changeValue = async (element, value) => {
+  assert.ok(element, "expected form field exists");
+  const prototype = Object.getPrototypeOf(element);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(prototype, "value").set.call(element, value);
+    element.dispatchEvent(new Event(element.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
+  });
+};
 
 async function renderStudy(extra = {}) {
   await act(() => root.render(createElement(StudyView, { ...data, favorites: new Set([2]), onToggleFavorite() {}, onRefresh: async () => ({ ...data, cacheSaved: true }), refreshing: false, ...extra })));
@@ -128,6 +144,114 @@ test("admin list and editor preserve the exact description source", async () => 
   await click(buttonText(container, "修改"));
   assert.equal(container.querySelector('textarea[name="description"]').value, description);
   assert.equal(container.querySelector(".katex"), null);
+});
+
+test("admin inserts above a search result and both admin and mobile keep that order", async () => {
+  const targetId = "35897a5c-775d-45ad-8353-d7f97e3bf22c";
+  let functions = [
+    { ...data.functions[0], name: "which" },
+    { ...data.functions[0], id: targetId, name: "dpkg" },
+    { ...data.functions[0], id: 3, name: "chmod" },
+    data.functions[1],
+  ];
+  const requests = [];
+  let refreshes = 0;
+  let rejectSave = true;
+  globalThis.fetch = async (url, options) => {
+    if (url === "api/libraries") return Response.json(data.libraries);
+    if (url === "api/directories") return Response.json(data.directories);
+    assert.equal(url, "api/functions");
+    assert.equal(options.method, "POST");
+    const { beforeId, ...fields } = JSON.parse(options.body);
+    requests.push({ beforeId, ...fields });
+    if (rejectSave) return Response.json({ message: "保存失败，请重试" }, { status: 500 });
+    const created = { ...fields, id: "c43a6a02-bba3-4a4a-bc16-ac4d7a83f811" };
+    functions.splice(functions.findIndex((item) => item.id === beforeId), 0, created);
+    return Response.json(created, { status: 201 });
+  };
+  const onRefresh = async () => {
+    refreshes += 1;
+    functions = [...functions];
+    root.render(createElement(AdminView, { functions, onRefresh }));
+  };
+  await act(async () => root.render(createElement(AdminView, { functions, onRefresh })));
+  await changeValue(container.querySelector('[aria-label="搜索函数名称"]'), "dpkg");
+  assert.equal(container.querySelectorAll(".admin-function-item").length, 1);
+  await click(buttonText(container.querySelector(".admin-function-item"), "在上方新增"));
+  const form = container.querySelector("form.editor-card");
+  assert.equal(form.querySelector(".insertion-hint strong").textContent, "dpkg");
+  assert.equal(document.activeElement, form.elements.name);
+  assert.equal(form.elements.name.value, "");
+  await changeValue(form.elements.name, "new-command");
+  await changeValue(form.elements.description, "`新命令` $y=a^3$");
+  await changeValue(form.elements.code, "new-command --help");
+  await click(buttonText(form, "保存并插入"));
+  assert.match(form.querySelector(".error-message").textContent, /保存失败/);
+  assert.equal(form.elements.name.value, "new-command");
+  assert.equal(form.querySelector(".insertion-hint strong").textContent, "dpkg");
+  assert.equal(refreshes, 0);
+  rejectSave = false;
+  await click(buttonText(form, "保存并插入"));
+  assert.deepEqual(requests.map((request) => request.beforeId), [targetId, targetId]);
+  assert.equal(requests[1].library, "Python");
+  assert.equal(requests[1].description, "`新命令` $y=a^3$");
+  assert.equal(refreshes, 1);
+  assert.equal(form.querySelector(".insertion-hint"), null);
+  assert.equal(form.elements.name.value, "");
+  assert.ok(buttonText(form, "添加函数"));
+  assert.deepEqual([...container.querySelectorAll(".item-content h3")].map((el) => el.textContent), ["which", "new-command", "dpkg", "chmod"]);
+  assert.deepEqual([...container.querySelectorAll(".item-index")].map((el) => el.textContent), ["01", "02", "03", "04"]);
+
+  await renderStudy({ functions });
+  await click(buttonText(container.querySelector(".mobile-bottom-nav"), "目录"));
+  const catalog = container.querySelector(".mobile-catalog");
+  await click([...catalog.querySelectorAll(".mobile-catalog-list > button")].find((button) => button.querySelector("strong")?.textContent === "Python"));
+  await click([...catalog.querySelectorAll(".mobile-catalog-library-open")].find((button) => button.textContent.includes("Python")));
+  assert.deepEqual([...catalog.querySelectorAll(".mobile-catalog-list > button strong")].map((el) => el.textContent), ["which", "new-command", "dpkg", "chmod"]);
+});
+
+test("canceling insertion or switching editor scope clears the insertion target", async () => {
+  const writes = [];
+  globalThis.fetch = async (url, options) => {
+    if (url === "api/libraries") return Response.json(data.libraries);
+    if (url === "api/directories") return Response.json(data.directories);
+    writes.push({ url, method: options.method, body: JSON.parse(options.body) });
+    return Response.json({ id: 1, ...JSON.parse(options.body) });
+  };
+  await act(async () => root.render(createElement(AdminView, { functions: data.functions, onRefresh: async () => {} })));
+  const form = container.querySelector("form.editor-card");
+  await click(buttonText(container, "在上方新增"));
+  await changeValue(form.elements.name, "discarded-draft");
+  await click(buttonText(form, "取消插入"));
+  assert.equal(form.querySelector(".insertion-hint"), null);
+  assert.equal(form.elements.name.value, "");
+  assert.equal(writes.length, 0);
+
+  await click(buttonText(container, "在上方新增"));
+  await click(buttonText(container, "修改"));
+  assert.equal(form.querySelector(".insertion-hint"), null);
+  assert.equal(form.elements.name.value, "python_sample()");
+  await click(buttonText(form, "保存修改"));
+  assert.equal(writes[0].url, "api/functions/1");
+  assert.equal(writes[0].method, "PUT");
+  assert.ok(!Object.hasOwn(writes[0].body, "beforeId"));
+
+  await click(buttonText(container, "在上方新增"));
+  await changeValue(container.querySelectorAll(".function-scope-controls select")[1], "NumPy");
+  assert.equal(form.querySelector(".insertion-hint"), null);
+  await changeValue(form.elements.name, "ordinary-add");
+  await changeValue(form.elements.description, "description");
+  await changeValue(form.elements.code, "code");
+  await click(buttonText(form, "添加函数"));
+  assert.equal(writes[1].url, "api/functions");
+  assert.equal(writes[1].method, "POST");
+  assert.equal(writes[1].body.library, "NumPy");
+  assert.ok(!Object.hasOwn(writes[1].body, "beforeId"));
+
+  await click(buttonText(container, "在上方新增"));
+  await changeValue(container.querySelectorAll(".function-scope-controls select")[0], "未分类");
+  assert.equal(form.querySelector(".insertion-hint"), null);
+  assert.equal(buttonText(form, "添加函数").disabled, true);
 });
 
 test("complete backup is delivered to the browser as a named JSON download", async () => {

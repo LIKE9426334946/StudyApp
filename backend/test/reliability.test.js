@@ -88,6 +88,64 @@ test("parallel saves preserve every record; IDs survive deletion and restart wit
   assert.equal((await f.request("/api/functions/1", "PUT", example("legacy-edited"))).status, 200);
 });
 
+test("insertions before numeric and UUID IDs persist in list, study data and backups", async (t) => {
+  const { request, options, restart } = await fixture(t);
+  async function add(name, extra = {}) {
+    const response = await request("/api/functions", "POST", { ...example(name), ...extra });
+    assert.equal(response.status, 201);
+    return response.json();
+  }
+  const otherLibrary = await add("array", { library: "NumPy" });
+  const anchor = await add("dpkg");
+  const tail = await add("chmod");
+  const first = await add("first", { beforeId: 1 });
+  const inserted = await add("new-command", { beforeId: anchor.id });
+  const appended = await add("last");
+  const expectedIds = [first.id, 1, otherLibrary.id, inserted.id, anchor.id, tail.id, appended.id];
+  const functions = await (await request("/api/functions")).json();
+  assert.deepEqual(functions.map((item) => item.id), expectedIds);
+  assert.deepEqual(functions.filter((item) => item.library === "Python").map((item) => item.name), ["first", "legacy", "new-command", "dpkg", "chmod", "last"]);
+  assert.ok(functions.every((item) => !Object.hasOwn(item, "beforeId")));
+  assert.deepEqual(JSON.parse(await fs.readFile(options.dataFile, "utf8")), functions);
+  await restart();
+  assert.deepEqual((await (await request("/api/study-data")).json()).functions, functions);
+  const backup = await (await request("/api/backup")).json();
+  assert.deepEqual(backup.functions, functions);
+  await add("temporary");
+  assert.equal((await request("/api/backup/restore", "POST", backup)).status, 200);
+  assert.deepEqual((await (await request("/api/study-data")).json()).functions, functions);
+});
+
+test("invalid or stale insertion targets never append or change stored functions", async (t) => {
+  const { request, options } = await fixture(t);
+  const deleted = await (await request("/api/functions", "POST", example("deleted"))).json();
+  await request(`/api/functions/${deleted.id}`, "DELETE");
+  const before = await filesInDataDirectory(options);
+  for (const [extra, status] of [
+    [{ beforeId: {} }, 400],
+    [{ beforeId: "invalid" }, 400],
+    [{ beforeId: deleted.id }, 404],
+    [{ beforeId: 999 }, 404],
+    [{ beforeId: 1, library: "NumPy" }, 409],
+  ]) {
+    const response = await request("/api/functions", "POST", { ...example("invalid-insert"), ...extra });
+    assert.equal(response.status, status);
+    assert.match((await response.json()).message, /插入位置|目标函数/);
+    assert.deepEqual(await filesInDataDirectory(options), before);
+  }
+});
+
+test("concurrent insertions keep every new function before the same target", async (t) => {
+  const { request } = await fixture(t);
+  const responses = await Promise.all(Array.from({ length: 5 }, (_, i) => request("/api/functions", "POST", { ...example(`insert-${i}`), beforeId: 1 })));
+  assert.ok(responses.every((response) => response.status === 201));
+  const created = await Promise.all(responses.map((response) => response.json()));
+  const functions = await (await request("/api/functions")).json();
+  assert.equal(functions.at(-1).id, 1);
+  assert.equal(functions.length, 6);
+  assert.deepEqual(new Set(functions.slice(0, -1).map((item) => item.id)), new Set(created.map((item) => item.id)));
+});
+
 test("import canonicalizes library names and never reuses imported numeric IDs", async (t) => {
   const { request, options } = await fixture(t);
   const response = await request("/api/functions/import?mode=append", "POST", [{ id: Number.MAX_VALUE, ...example("lowercase", "numpy") }]);

@@ -31,6 +31,7 @@ const MAX_JSON_FILE_SIZE = 50 * 1024 * 1024;
 function AdminView({ functions, onRefresh }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
+  const [insertionTarget, setInsertionTarget] = useState(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -58,6 +59,7 @@ function AdminView({ functions, onRefresh }) {
   const [listLibrary, setListLibrary] = useState("");
   const [functionQuery, setFunctionQuery] = useState("");
   const importInputRef = useRef(null);
+  const editorRef = useRef(null);
 
   const selectedLibraryFunctions = useMemo(
     () => functions.filter((item) => item.library === listLibrary),
@@ -178,6 +180,7 @@ function AdminView({ functions, onRefresh }) {
 
   function changeListLibrary(event) {
     const library = event.target.value;
+    setInsertionTarget(null);
     setListLibrary(library);
     setForm((current) => ({ ...current, library }));
     setFunctionQuery("");
@@ -189,6 +192,21 @@ function AdminView({ functions, onRefresh }) {
       library: listLibrary,
     });
     setEditingId(null);
+    setInsertionTarget(null);
+  }
+
+  function beginInsertBefore(item) {
+    const directory = libraryDirectoryMap.get(item.library);
+    if (directory) setSelectedLibraryDirectory(directory);
+    setListLibrary(item.library);
+    setEditingId(null);
+    setInsertionTarget({ id: item.id, name: item.name, library: item.library });
+    setForm({ ...EMPTY_FORM, library: item.library });
+    setMessage("");
+    setError("");
+    setFunctionQuery("");
+    editorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    editorRef.current.querySelector('[name="name"]').focus({ preventScroll: true });
   }
 
   function beginEdit(item) {
@@ -199,6 +217,7 @@ function AdminView({ functions, onRefresh }) {
     }
     setListLibrary(item.library);
     setEditingId(item.id);
+    setInsertionTarget(null);
     setForm({
       library: item.library,
       name: item.name,
@@ -223,8 +242,8 @@ function AdminView({ functions, onRefresh }) {
         await updateFunction(editingId, form);
         setMessage("函数已经更新。");
       } else {
-        await createFunction(form);
-        setMessage("新函数已经添加。");
+        await createFunction({ ...form, ...(insertionTarget ? { beforeId: insertionTarget.id } : {}) });
+        setMessage(insertionTarget ? `新函数已添加到“${insertionTarget.name}”上方。` : "新函数已经添加。");
       }
 
       resetForm();
@@ -247,7 +266,7 @@ function AdminView({ functions, onRefresh }) {
       await deleteFunction(item.id);
       setMessage(`“${item.name}”已经删除。`);
 
-      if (editingId === item.id) {
+      if (editingId === item.id || insertionTarget?.id === item.id) {
         resetForm();
       }
 
@@ -333,6 +352,7 @@ function AdminView({ functions, onRefresh }) {
   }
 
   function selectDirectory(name) {
+    setInsertionTarget(null);
     setSelectedLibraryDirectory(name);
     setFunctionQuery("");
     setLibraryMessage("");
@@ -1209,7 +1229,7 @@ function AdminView({ functions, onRefresh }) {
             <select
               value={selectedLibraryDirectory}
               onChange={(event) => selectDirectory(event.target.value)}
-              disabled={directories.length === 0}
+              disabled={saving || directories.length === 0}
             >
               <option value="" disabled>
                 选择目录
@@ -1227,7 +1247,7 @@ function AdminView({ functions, onRefresh }) {
             <select
               value={listLibrary}
               onChange={changeListLibrary}
-              disabled={selectedDirectoryLibraries.length === 0}
+              disabled={saving || selectedDirectoryLibraries.length === 0}
             >
               <option value="" disabled>
                 {selectedDirectoryLibraries.length === 0
@@ -1252,18 +1272,24 @@ function AdminView({ functions, onRefresh }) {
       </section>
 
       <div className="admin-grid">
-        <form className="editor-card" onSubmit={handleSubmit}>
+        <form className="editor-card" ref={editorRef} onSubmit={handleSubmit}>
           <div className="editor-title">
             <div>
-              <span>{editingId ? "EDIT FUNCTION" : "NEW FUNCTION"}</span>
-              <h2>{editingId ? "修改函数" : "添加函数"}</h2>
+              <span>{editingId ? "EDIT FUNCTION" : insertionTarget ? "INSERT FUNCTION" : "NEW FUNCTION"}</span>
+              <h2>{editingId ? "修改函数" : insertionTarget ? "在上方新增函数" : "添加函数"}</h2>
             </div>
-            {editingId && (
-              <button className="text-button" type="button" onClick={resetForm}>
-                取消修改
+            {(editingId || insertionTarget) && (
+              <button className="text-button" type="button" disabled={saving} onClick={resetForm}>
+                {editingId ? "取消修改" : "取消插入"}
               </button>
             )}
           </div>
+
+          {insertionTarget && (
+            <p className="insertion-hint" role="status">
+              新函数将插在 <strong>{insertionTarget.name}</strong> 的上方。
+            </p>
+          )}
 
           <div className="form-row">
             <div className="editor-location">
@@ -1350,7 +1376,7 @@ function AdminView({ functions, onRefresh }) {
             type="submit"
             disabled={saving || !listLibrary}
           >
-            {saving ? "正在保存……" : editingId ? "保存修改" : "添加函数"}
+            {saving ? "正在保存……" : editingId ? "保存修改" : insertionTarget ? "保存并插入" : "添加函数"}
           </button>
         </form>
 
@@ -1417,12 +1443,16 @@ function AdminView({ functions, onRefresh }) {
                           <p>{item.description}</p>
                         </div>
                         <div className="item-actions">
-                          <button type="button" onClick={() => beginEdit(item)}>
+                          <button type="button" disabled={saving || transferring} onClick={() => beginInsertBefore(item)}>
+                            在上方新增
+                          </button>
+                          <button type="button" disabled={saving} onClick={() => beginEdit(item)}>
                             修改
                           </button>
                           <button
                             className="danger-button"
                             type="button"
+                            disabled={saving}
                             onClick={() => handleDelete(item)}
                           >
                             删除

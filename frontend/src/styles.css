@@ -1634,6 +1634,17 @@ textarea:focus-visible {
   color: var(--red);
 }
 
+.insertion-hint {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  color: var(--green);
+  background: var(--green-soft);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
 .empty-list {
   padding: 60px 20px;
   color: var(--muted);

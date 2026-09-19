@@ -748,9 +748,23 @@ function createApp(options = {}) {
 
       item.library = library;
       const functions = await readFunctions(dataFile);
+      const beforeId = req.body.beforeId;
+      let insertIndex = functions.length;
+      if (beforeId != null) {
+        if (!validFunctionId(beforeId)) {
+          return res.status(400).json({ message: "插入位置的函数 ID 无效" });
+        }
+        insertIndex = functions.findIndex((entry) => entry.id === beforeId);
+        if (insertIndex === -1) {
+          return res.status(404).json({ message: "目标函数已不存在，请刷新列表后重新选择插入位置。" });
+        }
+        if (functions[insertIndex].library !== library) {
+          return res.status(409).json({ message: "目标函数不在当前函数库，请重新选择插入位置。" });
+        }
+      }
       const created = { id: crypto.randomUUID(), ...item };
 
-      functions.push(created);
+      functions.splice(insertIndex, 0, created);
       await writeFunctions(dataFile, functions);
 
       return res.status(201).json(created);
